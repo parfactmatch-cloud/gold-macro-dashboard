@@ -4,4 +4,4 @@ fredapi
 plotly
 pandas
 numpy
-
+requests
