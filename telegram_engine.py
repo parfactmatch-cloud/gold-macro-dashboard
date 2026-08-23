@@ -78,7 +78,7 @@ def run_forward_test():
     low_prev = float(gold_1h['Low'].iloc[-2].item())
     high_prev = float(gold_1h['High'].iloc[-2].item())
 
-    risk_amount = 100.0  # 1% on $10,000 baseline
+    risk_amount = 100.0  # 1% Risk on $10,000 baseline
 
     if score >= 4 and close > ema50:
         sl = round(min(low_prev, close - 4.0), 2)
@@ -128,4 +128,4 @@ def run_forward_test():
 
 if __name__ == "__main__":
     run_forward_test()
-  
+    
