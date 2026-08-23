@@ -30,7 +30,7 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # ----------------- CONFIG & DATA FETCHING -----------------
-FRED_API_KEY = "YOUR_FRED_API_KEY_HERE"  # Put your 32-char FRED API Key here
+FRED_API_KEY = "5f5abaf5f6b2887e0f54337f65b8169d"  # Put your 32-char FRED API Key here
 fred = Fred(api_key=FRED_API_KEY)
 
 @st.cache_data(ttl=1800)
