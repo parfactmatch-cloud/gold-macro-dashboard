@@ -1,4 +1,3 @@
-# gold-macro-dashboard
 # 🪙 Institutional Macro & Order Flow Gold Engine (XAU/USD)
 
 An automated institutional-grade macro bias tracker, order flow imbalance engine, and forward-testing framework designed specifically for Gold (XAU/USD). The system tracks multi-variable macroeconomic metrics, liquidity shifts, commitment of traders (COT) data, live Order Book (DOM) depth, and 1-hour trend alignment to deliver structured trade execution alerts directly to Telegram.
@@ -23,6 +22,8 @@ The engine evaluates 5 macro and microstructure layers before triggering high-pr
 | **CFTC COT Flow** | CFTC Public API | $\pm 1$ | Managed Money Net Long Increase | Managed Money Net Short Increase |
 | **Order Book Depth (DOM)**| Public L2 API (`PAXGUSDT`)| $\pm 1$ | Bid/Ask Ratio $\ge 1.25$ | Bid/Ask Ratio $\le 0.75$ |
 
+---
+
 ### 🎯 Technical & Execution Filter
 * **Trend Alignment:** 1-Hour Gold Spot Price vs 50 EMA.
 * **Buy Trigger:** Macro + DOM Score $\ge +4$ **AND** 1H Close $>$ 1H 50 EMA.
@@ -34,28 +35,25 @@ The engine evaluates 5 macro and microstructure layers before triggering high-pr
 
 ## ⚙️ Repository Structure
 
-├── .github/
-│   └── workflows/
-│       ├── main.yml             # Hourly automated macro/DOM scan engine
-│       └── weekly_summary.yml   # Friday market close weekly performance report
-├── app.py                       # Streamlit interactive web dashboard
-├── telegram_engine.py           # Real-time data pipeline & alert trigger engine
-├── weekly_report.py             # Performance aggregator & CSV analyzer
-├── trade_log.csv                # Historical execution & paper test journal
-├── requirements.txt             # Project dependencies
-└── README.md                    # System documentation
+* **`.github/workflows/main.yml`** : Hourly automated macro/DOM scan engine
+* **`.github/workflows/weekly_summary.yml`** : Friday market close weekly performance report
+* **`app.py`** : Streamlit interactive web dashboard
+* **`telegram_engine.py`** : Real-time data pipeline & alert trigger engine
+* **`weekly_report.py`** : Performance aggregator & CSV analyzer
+* **`trade_log.csv`** : Historical execution & paper test journal
+* **`requirements.txt`** : Project dependencies
 
-Install dependencies:
-pip install -r requirements.txt
+---
 
-Run Streamlit Dashboard locally:
+## 🔐 Required GitHub Secrets
 
-streamlit run app.py
+Under **Settings > Secrets and variables > Actions**, ensure these are set:
+* `FRED_API_KEY`: API key from Federal Reserve Economic Data (FRED).
+* `TELEGRAM_BOT_TOKEN`: Bot token generated via @BotFather.
+* `TELEGRAM_CHAT_ID`: Destination Chat ID for alerts.
 
-Test the Macro & Telegram Engine:
-python telegram_engine.py
+---
 
-📊 Automated Reports & Forward Testing
-Hourly Alerts: Runs every hour during active market sessions (Monday - Friday) via GitHub Actions.
-Weekly Performance Audit: Every Friday at market close (22:00 UTC), generating win rate, aggregate risk-to-reward ratio, and trade counts directly to Telegram.
-
+## 📊 Automated Execution Schedule
+* **Hourly Scans:** Runs every hour during active market days (`Monday - Friday`) via GitHub Actions.
+* **Weekly Performance Audit:** Every Friday at market close (`22:00 UTC`), generating full performance metrics directly to Telegram.
