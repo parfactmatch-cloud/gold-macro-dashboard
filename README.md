@@ -51,3 +51,11 @@ pip install -r requirements.txt
 Run Streamlit Dashboard locally:
 
 streamlit run app.py
+
+Test the Macro & Telegram Engine:
+python telegram_engine.py
+
+📊 Automated Reports & Forward Testing
+Hourly Alerts: Runs every hour during active market sessions (Monday - Friday) via GitHub Actions.
+Weekly Performance Audit: Every Friday at market close (22:00 UTC), generating win rate, aggregate risk-to-reward ratio, and trade counts directly to Telegram.
+
