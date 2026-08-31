@@ -1,226 +1,217 @@
 import os
 import requests
-import yfinance as yf
-from fredapi import Fred
 import pandas as pd
-import numpy as np
-import csv
-from datetime import datetime
+import yfinance as yf
+from datetime import datetime, timezone
+from fredapi import Fred
 
-# --- CONFIGURATION & SECRETS ---
+# ----------------- CONFIGURATION -----------------
 FRED_API_KEY = os.getenv("FRED_API_KEY")
-TELEGRAM_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
-CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
-DASHBOARD_URL = "https://gold-macro-dashboard-5vuz6kxl25bappkbsjnisr7.streamlit.app/"
-TV_URL = "https://in.tradingview.com/chart/?symbol=OANDA:XAUUSD"
+TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
+TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
+TRADE_LOG_FILE = "trade_log.csv"
 
-def safe_iloc(series, idx, default=0.0):
+# ----------------- 1. MACRO & LIQUIDITY DATA -----------------
+def get_macro_score():
+    score = 0
+    details = {}
+    
     try:
-        if len(series) >= abs(idx):
-            return float(series.iloc[idx])
-        elif len(series) > 0:
-            return float(series.iloc[-1])
-        return float(default)
-    except:
-        return float(default)
-
-def send_telegram(msg):
-    try:
-        url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
-        payload = {"chat_id": CHAT_ID, "text": msg, "parse_mode": "Markdown"}
-        res = requests.post(url, json=payload, timeout=10)
-        print(f"Telegram API Status Code: {res.status_code}")
+        fred = Fred(api_key=FRED_API_KEY)
+        
+        # 1. 10Y Real Yield (DFII10)
+        tips_data = fred.get_series('DFII10')
+        tips_5d_delta = tips_data.dropna().iloc[-1] - tips_data.dropna().iloc[-6]
+        if tips_5d_delta < -0.05:
+            score += 3
+            details['TIPS'] = f"+3 (Yield Falling: {tips_5d_delta:.2f}%)"
+        elif tips_5d_delta > 0.05:
+            score -= 3
+            details['TIPS'] = f"-3 (Yield Rising: {tips_5d_delta:.2f}%)"
+        else:
+            details['TIPS'] = f"0 (Yield Neutral: {tips_5d_delta:.2f}%)"
+            
+        # 2. Fed Net Liquidity = WALCL - TGA - RRP
+        walcl = fred.get_series('WALCL').dropna().iloc[-1]
+        tga = fred.get_series('WTREGEN').dropna().iloc[-1]
+        rrp = fred.get_series('RRPONTSYD').dropna().iloc[-1]
+        
+        walcl_prev = fred.get_series('WALCL').dropna().iloc[-2]
+        tga_prev = fred.get_series('WTREGEN').dropna().iloc[-2]
+        rrp_prev = fred.get_series('RRPONTSYD').dropna().iloc[-2]
+        
+        net_liq_curr = walcl - tga - rrp
+        net_liq_prev = walcl_prev - tga_prev - rrp_prev
+        liq_delta = net_liq_curr - net_liq_prev
+        
+        if liq_delta > 0:
+            score += 2
+            details['Liquidity'] = "+2 (Fed Liquidity Expanding)"
+        else:
+            score -= 2
+            details['Liquidity'] = "-2 (Fed Liquidity Contracting)"
+            
     except Exception as e:
-        print(f"Telegram Send Error: {e}")
+        details['Macro_Error'] = str(e)
+        
+    try:
+        # 3. US Dollar Index (DXY)
+        dxy = yf.download("DX-Y.NYB", period="10d", progress=False)
+        dxy_close = dxy['Close']
+        if isinstance(dxy_close, pd.DataFrame):
+            dxy_close = dxy_close.iloc[:, 0]
+        dxy_5d_delta = float(dxy_close.iloc[-1] - dxy_close.iloc[-6])
+        
+        if dxy_5d_delta < -0.50:
+            score += 2
+            details['DXY'] = f"+2 (DXY Weakening: {dxy_5d_delta:.2f})"
+        elif dxy_5d_delta > 0.50:
+            score -= 2
+            details['DXY'] = f"-2 (DXY Strengthening: {dxy_5d_delta:.2f})"
+        else:
+            details['DXY'] = f"0 (DXY Neutral: {dxy_5d_delta:.2f})"
+    except Exception as e:
+        details['DXY_Error'] = str(e)
+        
+    return score, details
 
-def log_trade(direction, entry, sl, tp, lots, score, dom_ratio=1.0):
-    file_name = "trade_log.csv"
-    file_exists = os.path.isfile(file_name)
-    with open(file_name, mode='a', newline='') as file:
-        writer = csv.writer(file)
-        if not file_exists:
-            writer.writerow(["Timestamp", "Pair", "Direction", "Entry", "SL", "TP", "Lots", "Macro_Score", "DOM_Ratio"])
-        writer.writerow([datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S"), "XAUUSD", direction, entry, sl, tp, lots, score, dom_ratio])
-
-def fetch_free_dom_imbalance():
-    """100% Free Public Order Book Depth Filter (Top 20 Levels)"""
+# ----------------- 2. ORDER BOOK DEPTH (DOM) -----------------
+def get_order_book_score():
+    score = 0
+    ratio = 1.0
     try:
         url = "https://api.binance.com/api/v3/depth?symbol=PAXGUSDT&limit=20"
-        res = requests.get(url, timeout=5)
-        data = res.json()
-        
-        bids = [float(item[1]) for item in data.get('bids', [])]
-        asks = [float(item[1]) for item in data.get('asks', [])]
-        
-        total_bids = sum(bids)
-        total_asks = sum(asks)
-        
-        if total_asks > 0:
-            ratio = round(total_bids / total_asks, 2)
-        else:
-            ratio = 1.0
-            
-        score = 0
-        if ratio >= 1.25:
-            score = 1   # Heavy Buyer DOM Imbalance (+1 Point)
-        elif ratio <= 0.75:
-            score = -1  # Heavy Seller DOM Imbalance (-1 Point)
-            
-        return score, ratio, total_bids, total_asks
-    except Exception as e:
-        print(f"DOM Fetch Notice: {e}")
-        return 0, 1.0, 0.0, 0.0
+        res = requests.get(url, timeout=5).json()
+        bids = sum([float(x[1]) for x in res['bids']])
+        asks = sum([float(x[1]) for x in res['asks']])
+        if asks > 0:
+            ratio = bids / asks
+            if ratio >= 1.25:
+                score = 1
+            elif ratio <= 0.75:
+                score = -1
+    except Exception:
+        pass
+    return score, ratio
 
-def fetch_cot_score():
-    try:
-        url = "https://publicreporting.cftc.gov/resource/jun7-fc8e.json?cftc_contract_market_code=088691&$limit=5&$order=report_date_as_yyyy_mm_dd%20DESC"
-        res = requests.get(url, timeout=10)
-        data = res.json()
-        if isinstance(data, list) and len(data) >= 2:
-            df_cot = pd.DataFrame(data)
-            net_curr = float(df_cot['noncomm_positions_long_all'].iloc[0]) - float(df_cot['noncomm_positions_short_all'].iloc[0])
-            net_prev = float(df_cot['noncomm_positions_long_all'].iloc[1]) - float(df_cot['noncomm_positions_short_all'].iloc[1])
-            cot_delta = net_curr - net_prev
-            return (1 if cot_delta > 0 else -1), int(net_curr), int(cot_delta)
-        return 0, 0, 0
-    except Exception as e:
-        print(f"COT Fetch Notice: {e}")
-        return 0, 0, 0
-
-def run_forward_test():
-    print("=== STARTING INSTITUTIONAL MACRO & ORDER FLOW EVALUATION ===")
-    
-    # 1. FRED Macro Data
-    fred = Fred(api_key=FRED_API_KEY)
-    real_yield = fred.get_series('DFII10').dropna()
-    ry_curr = safe_iloc(real_yield, -1, 2.0)
-    ry_prev = safe_iloc(real_yield, -5, ry_curr)
-    ry_delta = ry_curr - ry_prev
-
-    walcl = fred.get_series('WALCL').dropna()
-    tga = fred.get_series('WTREGEN').dropna()
-    rrp = fred.get_series('RRPONTSYD').dropna()
-    df_liq = pd.DataFrame({'W': walcl, 'T': tga, 'R': rrp}).dropna()
-    
-    if len(df_liq) >= 2:
-        net_liq = (df_liq['W'] - df_liq['T'] - df_liq['R']) / 1000000
-        liq_curr = safe_iloc(net_liq, -1, 5.8)
-        liq_delta = liq_curr - safe_iloc(net_liq, -2, liq_curr)
-    else:
-        liq_curr, liq_delta = 5.8, 0.0
-
-    # 2. Intermarket Correlations & Ratios
-    gold = yf.download("GC=F", period="3mo", interval="1d", progress=False)['Close'].squeeze().dropna()
-    dxy = yf.download("DX-Y.NYB", period="3mo", interval="1d", progress=False)['Close'].squeeze().dropna()
-    copper = yf.download("HG=F", period="3mo", interval="1d", progress=False)['Close'].squeeze().dropna()
-    combined = pd.DataFrame({'GC': gold, 'DXY': dxy, 'HG': copper}).dropna()
-
-    dxy_curr = safe_iloc(combined['DXY'], -1, 100.0)
-    dxy_delta = dxy_curr - safe_iloc(combined['DXY'], -5, dxy_curr)
-    returns = combined[['GC', 'DXY']].pct_change().dropna()
-    rolling_corr = returns['GC'].rolling(window=30).corr(returns['DXY']).dropna()
-    corr_val = safe_iloc(rolling_corr, -1, -0.40)
-    
-    gold_close_daily = safe_iloc(combined['GC'], -1, 4600.0)
-    cu_au = safe_iloc(combined['HG'], -1, 4.0) / (gold_close_daily if gold_close_daily else 1.0)
-
-    # 3. Positioning & Microstructure Data
-    cot_score, cot_net, cot_delta = fetch_cot_score()
-    dom_score, dom_ratio, bids_vol, asks_vol = fetch_free_dom_imbalance()
-
-    # 4. Total Macro + DOM Bias Score Calculation
-    score = 0
-    if ry_delta < -0.05: score += 3
-    elif ry_delta > 0.05: score -= 3
-    
-    if liq_delta > 0: score += 2
-    elif liq_delta < 0: score -= 2
-    
-    if dxy_delta < -0.5: score += 2
-    elif dxy_delta > 0.5: score -= 2
-    
-    score += cot_score
-    score += dom_score  # Dynamic DOM Weight
-
-    # 5. Technical 1H Execution Structure
+# ----------------- 3. TECHNICAL & LIQUIDITY LEVELS (1H EMA & PDH/PDL) -----------------
+def get_gold_technicals():
+    # 1-Hour Chart for Trend Filter
     gold_1h = yf.download("GC=F", period="5d", interval="1h", progress=False)
-    close = float(safe_iloc(gold_1h['Close'], -1, 0.0))
-    ema50 = float(safe_iloc(gold_1h['Close'].ewm(span=50).mean(), -1, 0.0))
-    low_prev = float(safe_iloc(gold_1h['Low'], -2, close - 4.0))
-    high_prev = float(safe_iloc(gold_1h['High'], -2, close + 4.0))
+    close_1h = gold_1h['Close']
+    if isinstance(close_1h, pd.DataFrame):
+        close_1h = close_1h.iloc[:, 0]
+    
+    current_price = float(close_1h.iloc[-1])
+    ema_50 = float(close_1h.ewm(span=50, adjust=False).mean().iloc[-1])
+    
+    # Daily Chart for Previous Day High & Low
+    gold_daily = yf.download("GC=F", period="5d", interval="1d", progress=False)
+    high_daily = gold_daily['High']
+    low_daily = gold_daily['Low']
+    if isinstance(high_daily, pd.DataFrame):
+        high_daily = high_daily.iloc[:, 0]
+        low_daily = low_daily.iloc[:, 0]
+        
+    pdh = float(high_daily.iloc[-2])
+    pdl = float(low_daily.iloc[-2])
+    
+    return current_price, ema_50, pdh, pdl
 
-    risk_amount = 100.0  # 1% Risk on $10,000 baseline
+# ----------------- 4. TELEGRAM DISPATCH -----------------
+def send_telegram_alert(message):
+    if not TELEGRAM_BOT_TOKEN or not TELEGRAM_CHAT_ID:
+        print("Telegram configuration missing.")
+        return
+    url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
+    payload = {
+        "chat_id": TELEGRAM_CHAT_ID,
+        "text": message,
+        "parse_mode": "Markdown"
+    }
+    requests.post(url, json=payload, timeout=10)
 
-    # Terminal Log Output
-    print(f"Macro + DOM Score: {score}/9")
-    print(f"10Y Real Yield: {ry_curr:.2f}% (5D Delta: {ry_delta:+.2f}%)")
-    print(f"Fed Net Liquidity: ${liq_curr:.2f}T (Delta: {liq_delta:+.2f}T)")
-    print(f"DXY 5D Delta: {dxy_delta:+.2f} | 30D Corr: {corr_val:.2f}")
-    print(f"CFTC Delta: {cot_delta:+,} Contracts (Score: {cot_score:+})")
-    print(f"DOM Imbalance: {dom_ratio}x (Score: {dom_score:+})")
-    print(f"1H Close: ${close:.2f} | 1H 50 EMA: ${ema50:.2f}")
-
-    # BUY TRIGGER (Macro + DOM + 25/75 Spread Logic)
-    if score >= 4 and close > ema50:
-        base_risk = close - min(low_prev, close - 4.0)
-        spread_buffer = round(base_risk * 0.25, 2)
-        sl = round(close - (base_risk + spread_buffer), 2)
-        total_risk = close - sl
-        lots = round(risk_amount / (total_risk * 100), 2)
-        tp = round(close + (base_risk * 2) + spread_buffer, 2)
-
-        msg = (
-            f"🟢 *XAU/USD FORWARD TEST: BUY SETUP*\n\n"
-            f"📊 *Macro Bias Score:* `+{score}/9 (STRONG LONG)`\n"
-            f"• *10Y Real Yield:* `{ry_curr:.2f}%` ({ry_delta:+.2f}% 5D)\n"
-            f"• *Net Liquidity:* `${liq_curr:.2f}T` ({liq_delta:+.2f}T)\n"
-            f"• *CFTC Flow:* `+{cot_delta:,} Contracts`\n"
-            f"• *DOM Imbalance:* `{dom_ratio}x Buyers` (Order Flow Bullish)\n"
-            f"• *30D DXY Corr:* `{corr_val:.2f}` | *Cu/Au:* `{cu_au:.6f}`\n\n"
-            f"📍 *Entry:* `${close:.2f}` (Above 1H 50 EMA)\n"
-            f"🛡️ *Spread Buffer (25%):* `${spread_buffer:.2f}`\n"
-            f"🛑 *Stop Loss:* `${sl:.2f}` (Risk: ${total_risk:.2f})\n"
-            f"🎯 *Take Profit:* `${tp:.2f}` (1:2 Net R:R)\n"
-            f"⚖️ *Position Size:* `{lots} Lots` (1% Fixed Risk)\n\n"
-            f"📊 [View Chart on TradingView]({TV_URL})\n"
-            f"🪙 [Open Live Macro Dashboard]({DASHBOARD_URL})"
-        )
-        send_telegram(msg)
-        log_trade("BUY", close, sl, tp, lots, score, dom_ratio)
-        print(">>> SUCCESS: Buy alert sent to Telegram.")
-
-    # SELL TRIGGER (Macro + DOM + 25/75 Spread Logic)
-    elif score <= -4 and close < ema50:
-        base_risk = max(high_prev, close + 4.0) - close
-        spread_buffer = round(base_risk * 0.25, 2)
-        sl = round(close + base_risk + spread_buffer, 2)
-        total_risk = sl - close
-        lots = round(risk_amount / (total_risk * 100), 2)
-        tp = round(close - (base_risk * 2) - spread_buffer, 2)
-
-        msg = (
-            f"🔴 *XAU/USD FORWARD TEST: SELL SETUP*\n\n"
-            f"📊 *Macro Bias Score:* `{score}/9 (STRONG SHORT)`\n"
-            f"• *10Y Real Yield:* `{ry_curr:.2f}%` ({ry_delta:+.2f}% 5D)\n"
-            f"• *Net Liquidity:* `${liq_curr:.2f}T` ({liq_delta:+.2f}T)\n"
-            f"• *CFTC Flow:* `{cot_delta:,} Contracts`\n"
-            f"• *DOM Imbalance:* `{dom_ratio}x Sellers` (Order Flow Bearish)\n"
-            f"• *30D DXY Corr:* `{corr_val:.2f}`\n\n"
-            f"📍 *Entry:* `${close:.2f}` (Below 1H 50 EMA)\n"
-            f"🛡️ *Spread Buffer (25%):* `${spread_buffer:.2f}`\n"
-            f"🛑 *Stop Loss:* `${sl:.2f}` (Risk: ${total_risk:.2f})\n"
-            f"🎯 *Take Profit:* `${tp:.2f}` (1:2 Net R:R)\n"
-            f"⚖️ *Position Size:* `{lots} Lots` (1% Fixed Risk)\n\n"
-            f"📊 [View Chart on TradingView]({TV_URL})\n"
-            f"🪙 [Open Live Macro Dashboard]({DASHBOARD_URL})"
-        )
-        send_telegram(msg)
-        log_trade("SELL", close, sl, tp, lots, score, dom_ratio)
-        print(">>> SUCCESS: Sell alert sent to Telegram.")
-
+# ----------------- 5. MAIN LOGIC ENGINE -----------------
+def main():
+    macro_score, macro_details = get_macro_score()
+    dom_score, dom_ratio = get_order_book_score()
+    
+    total_score = macro_score + dom_score
+    current_price, ema_50, pdh, pdl = get_gold_technicals()
+    
+    signal = "NEUTRAL"
+    tp = None
+    sl = None
+    
+    # Volatility Spread Buffer: 25% of baseline distance ($2.50 buffer)
+    spread_buffer = 2.50
+    base_sl_dist = 10.0
+    
+    # BUY SETUP
+    if total_score >= 4 and current_price > ema_50:
+        # Prevent buying directly into PDH resistance
+        if abs(current_price - pdh) > 2.0 or current_price > pdh:
+            signal = "BUY"
+            sl = round(current_price - (base_sl_dist + spread_buffer), 2)
+            # Dynamic TP target anchored to PDH or 1:2 R:R
+            tp = round(max(pdh, current_price + (base_sl_dist * 2) + spread_buffer), 2)
+            
+    # SELL SETUP
+    elif total_score <= -4 and current_price < ema_50:
+        # Prevent selling directly into PDL support
+        if abs(current_price - pdl) > 2.0 or current_price < pdl:
+            signal = "SELL"
+            sl = round(current_price + (base_sl_dist + spread_buffer), 2)
+            # Dynamic TP target anchored to PDL or 1:2 R:R
+            tp = round(min(pdl, current_price - (base_sl_dist * 2) - spread_buffer), 2)
+            
+    # Record to CSV Log
+    timestamp = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC")
+    new_record = pd.DataFrame([{
+        "Timestamp": timestamp,
+        "Price": current_price,
+        "EMA_50": ema_50,
+        "PDH": pdh,
+        "PDL": pdl,
+        "Macro_Score": total_score,
+        "DOM_Ratio": round(dom_ratio, 2),
+        "Signal": signal,
+        "SL": sl,
+        "TP": tp
+    }])
+    
+    if os.path.exists(TRADE_LOG_FILE):
+        new_record.to_csv(TRADE_LOG_FILE, mode='a', header=False, index=False)
     else:
-        print(">>> STATUS: Market is in Neutral/Filter Zone. No alert triggered.")
+        new_record.to_csv(TRADE_LOG_FILE, index=False)
+        
+    # Format and Dispatch Message if Signal Triggered
+    if signal in ["BUY", "SELL"]:
+        icon = "🟢" if signal == "BUY" else "🔴"
+        msg = f"""
+{icon} *INSTITUTIONAL XAU/USD ALERT: {signal}*
+
+📊 *Macro Confluence Score:* `{total_score}/9`
+📈 *Current Price:* `${current_price:.2f}`
+🎯 *1H 50 EMA:* `${ema_50:.2f}`
+
+🏛 *Key Liquidity Reference Levels:*
+• *PDH (Previous Day High):* `${pdh:.2f}`
+• *PDL (Previous Day Low):* `${pdl:.2f}`
+• *DOM Bid/Ask Ratio:* `{dom_ratio:.2f}`
+
+⚡ *Execution Plan:*
+• *Entry:* `${current_price:.2f}`
+• *Stop Loss:* `${sl:.2f}` (Spread Buffered)
+• *Take Profit:* `${tp:.2f}` (Target Level)
+
+_Engine: Automated Macro & Order Flow System_
+"""
+        send_telegram_alert(msg)
+        print(f"Triggered {signal} alert at {current_price}")
+    else:
+        print(f"Scan complete. Neutral conditions (Score: {total_score}, Price: {current_price}, 50 EMA: {ema_50})")
 
 if __name__ == "__main__":
-    run_forward_test()
-            
+    main()
+    
