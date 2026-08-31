@@ -1,4 +1,4 @@
-# 🪙 Institutional Macro & Order Flow Gold Engine (XAU/USD)
+# 🪙 Institutional Macro & Order Flow Engine (XAU/USD)
 
 An automated institutional-grade macro bias tracker, order flow imbalance engine, and forward-testing framework designed specifically for Gold (XAU/USD). The system tracks multi-variable macroeconomic metrics, liquidity shifts, commitment of traders (COT) data, live Order Book (DOM) depth, and 1-hour trend alignment to deliver structured trade execution alerts directly to Telegram.
 
