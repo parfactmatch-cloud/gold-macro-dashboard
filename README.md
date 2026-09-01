@@ -1,59 +1,58 @@
-# 🪙 Institutional Macro & Order Flow Engine (XAU/USD)
+# 🪙 Institutional Macro, MTF Fractal & Order Flow Engine (XAU/USD)
 
-An automated institutional-grade macro bias tracker, order flow imbalance engine, and forward-testing framework designed specifically for Gold (XAU/USD). The system tracks multi-variable macroeconomic metrics, liquidity shifts, commitment of traders (COT) data, live Order Book (DOM) depth, and 1-hour trend alignment to deliver structured trade execution alerts directly to Telegram.
+An automated institutional-grade macro bias tracker, multi-timeframe (MTF) fractal exhaustion model, and order flow engine designed specifically for Gold (**XAU/USD**). The system combines multi-variable macroeconomic metrics, liquidity shifts, Binance L2 Order Book (DOM) depth, and a 4-layer fractal equilibrium matrix to deliver high-conviction trade execution alerts directly to Telegram.
 
 ---
 
 ## 🚀 Live Dashboard & Setup Links
-* **Live Dashboard:** [Gold Macro Streamlit Dashboard](https://gold-macro-dashboard-5vuz6kxl25bappkbsjnisr7.streamlit.app/)
-* **TradingView Chart:** [XAU/USD on TradingView](https://in.tradingview.com/chart/?symbol=OANDA:XAUUSD)
+
+* **Live Dashboard:** [Gold Macro Streamlit Dashboard](https://gold-macro-dashboard.streamlit.app)
+* **TradingView Reference:** [XAU/USD Live Chart](https://www.tradingview.com/symbols/XAUUSD/)
 
 ---
 
-## 🧠 Core Architecture & Scoring Model (-9 to +9)
+## 🧠 Core Multi-Layer Architecture
 
-The engine evaluates 5 macro and microstructure layers before triggering high-probability executions:
+The engine scans and validates 5 core layers before triggering forward-test executions:
 
-| Indicator / Layer | Source | Metric Weight | Bullish Bias Condition | Bearish Bias Condition |
-| :--- | :--- | :--- | :--- | :--- |
-| **10Y Real Yield (TIPS)** | FRED (`DFII10`) | $\pm 3$ | 5-Day Delta $< -0.05\%$ | 5-Day Delta $> +0.05\%$ |
-| **Fed Net Liquidity** | FRED (`WALCL - TGA - RRP`) | $\pm 2$ | Weekly Delta $> 0$ | Weekly Delta $< 0$ |
-| **US Dollar Index (DXY)** | Yahoo Finance (`DX-Y.NYB`)| $\pm 2$ | 5-Day Delta $< -0.50$ | 5-Day Delta $> +0.50$ |
-| **CFTC COT Flow** | CFTC Public API | $\pm 1$ | Managed Money Net Long Increase | Managed Money Net Short Increase |
-| **Order Book Depth (DOM)**| Public L2 API (`PAXGUSDT`)| $\pm 1$ | Bid/Ask Ratio $\ge 1.25$ | Bid/Ask Ratio $\le 0.75$ |
-
----
-
-### 🎯 Technical & Execution Filter
-* **Trend Alignment:** 1-Hour Gold Spot Price vs 50 EMA.
-* **Buy Trigger:** Macro + DOM Score $\ge +4$ **AND** 1H Close $>$ 1H 50 EMA.
-* **Sell Trigger:** Macro + DOM Score $\le -4$ **AND** 1H Close $<$ 1H 50 EMA.
-* **Spread Protection:** 25/75 volatility spread buffer added to stop-loss and take-profit calculations.
-* **Fixed Risk Sizing:** 1% fixed account risk dynamically calculated based on actual point distance.
+| Layer / Model | Data Source / Timeframe | Metric & Logic | Conviction Impact |
+| :--- | :--- | :--- | :--- |
+| **10Y Real Yield (TIPS)** | FRED (`DFII10`) | 5-Day Delta $< -0.05\%$ (Bullish) / $> +0.05\%$ (Bearish) | $\pm 3$ Macro Points |
+| **Fed Net Liquidity** | FRED (`WALCL - TGA - RRP`) | Weekly Expansion (Bullish) / Contraction (Bearish) | $\pm 2$ Macro Points |
+| **US Dollar Index (DXY)** | Yahoo Finance (`DX-Y.NYB`) | 5-Day Delta $< -0.50$ (Bullish) / $> +0.50$ (Bearish) | $\pm 2$ Macro Points |
+| **Binance Order Book (DOM)** | Binance L2 (`PAXGUSDT`) | Bid/Ask Ratio $\ge 1.25$ (Absorption) / $\le 0.75$ (Distribution) | $\pm 1$ DOM Score |
+| **1H Trend Filter** | 1-Hour Chart (`GC=F`) | Spot Price vs 1H 50 EMA & Daily PDH / PDL Breakout Filters | Directional Baseline |
 
 ---
 
-## ⚙️ Repository Structure
+## 🏛 Multi-Timeframe Fractal Matrix (MTF Exhaustion)
 
-* **`.github/workflows/main.yml`** : Hourly automated macro/DOM scan engine
-* **`.github/workflows/weekly_summary.yml`** : Friday market close weekly performance report
-* **`app.py`** : Streamlit interactive web dashboard
-* **`telegram_engine.py`** : Real-time data pipeline & alert trigger engine
-* **`weekly_report.py`** : Performance aggregator & CSV analyzer
-* **`trade_log.csv`** : Historical execution & paper test journal
-* **`requirements.txt`** : Project dependencies
+The system incorporates institutional **Equilibrium (50%) & Range Limit (4X Exhaustion)** theory across 4 synchronized timeframes:
+
+### Setup Conviction Tiers:
+* **`STANDARD`:** Macro Score $\ge +4$ (or $\le -4$) + 1H 50 EMA Trend Alignment.
+* **`INSTITUTIONAL GRADE`:** Macro Score + 1H Trend + (1H/30M 50% Equilibrium aligned with 15M/5M 4X Exhaustion) + Live DOM Absorption Wall. Provides tighter spread-buffered Stop Loss.
 
 ---
 
-## 🔐 Required GitHub Secrets
+## ⚙️ Automation & Forward Testing Workflow
 
-Under **Settings > Secrets and variables > Actions**, ensure these are set:
-* `FRED_API_KEY`: API key from Federal Reserve Economic Data (FRED).
-* `TELEGRAM_BOT_TOKEN`: Bot token generated via @BotFather.
-* `TELEGRAM_CHAT_ID`: Destination Chat ID for alerts.
+* **Telegram Alerts:** Automated execution signals with precise Entry, Stop Loss (Spread Buffered), Take Profit, and Confluence status.
+* **CSV Trade Logging:** Every trigger is appended to `trade_log.csv` for forward testing.
+* **Weekly Performance Audit:** `weekly_report.py` audits trade outcomes (Win Rate, Profit Factor, Net Points) every Friday at market close.
+* **Execution:** Powered 100% serverless via GitHub Actions.
 
 ---
 
-## 📊 Automated Execution Schedule
-* **Hourly Scans:** Runs every hour during active market days (`Monday - Friday`) via GitHub Actions.
-* **Weekly Performance Audit:** Every Friday at market close (`22:00 UTC`), generating full performance metrics directly to Telegram.
+## 🛠 Repository Structure
+
+```text
+├── .github/workflows/
+│   ├── run_engine.yml          # Hourly macro & fractal scanner
+│   └── weekly_performance.yml  # Friday market-close audit dispatch
+├── app.py                      # Streamlit interactive dashboard
+├── telegram_engine.py          # Core Macro + MTF Fractal + DOM Engine
+├── weekly_report.py            # Automated performance analytics & Telegram dispatcher
+├── trade_log.csv               # Live forward-tested execution logs
+├── requirements.txt            # Python dependencies
+└── README.md                   # System documentation
