@@ -1,4 +1,4 @@
-# 🪙 Institutional Macro, MTF Fractal & Order Flow Engine (XAU/USD)
+# 🪙 Institutional Macro, MTF Fractal & Order Flow Engine.
 
 An automated institutional-grade macro bias tracker, multi-timeframe (MTF) fractal exhaustion model, and order flow engine designed specifically for Gold (**XAU/USD**). The system combines multi-variable macroeconomic metrics, liquidity shifts, Binance L2 Order Book (DOM) depth, and a 4-layer fractal equilibrium matrix to deliver high-conviction trade execution alerts directly to Telegram.
 
