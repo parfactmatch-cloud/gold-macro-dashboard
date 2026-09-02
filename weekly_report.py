@@ -2,7 +2,6 @@ import os
 import requests
 import numpy as np
 import pandas as pd
-import yfinance as yf
 from datetime import datetime, timezone
 
 # ----------------- CONFIGURATION -----------------
@@ -30,9 +29,18 @@ def generate_weekly_summary():
         print("No trade log found.")
         return
 
-    df = pd.read_csv(TRADE_LOG_FILE)
-    
-    # Filter only actionable execution signals
+    try:
+        # on_bad_lines='skip' ensures format mismatches from updates don't crash the script
+        df = pd.read_csv(TRADE_LOG_FILE, on_bad_lines='skip')
+    except Exception as e:
+        print(f"Error reading CSV: {e}")
+        return
+
+    # Check if necessary column exists
+    if 'Signal' not in df.columns:
+        print("Signal column not found in logs.")
+        return
+
     trade_signals = df[df['Signal'].isin(['BUY', 'SELL'])].copy()
     
     total_scans = len(df)
@@ -50,15 +58,18 @@ def generate_weekly_summary():
 _Engine: Strict MTF Exhaustion + DOM Liquidity Engine_
 """
         send_telegram_message(msg)
+        print("Zero trade summary dispatched.")
         return
 
     buys = len(trade_signals[trade_signals['Signal'] == 'BUY'])
     sells = len(trade_signals[trade_signals['Signal'] == 'SELL'])
-    institutional_count = len(trade_signals[trade_signals['Conviction'].str.contains("INSTITUTIONAL", na=False)])
+    
+    institutional_count = 0
+    if 'Conviction' in trade_signals.columns:
+        institutional_count = len(trade_signals[trade_signals['Conviction'].str.contains("INSTITUTIONAL", na=False)])
 
-    # Average metrics across scanned sessions
-    avg_macro = df['Macro_Score'].mean() if 'Macro_Score' in df.columns else 0.0
-    avg_dom = df['DOM_Ratio'].mean() if 'DOM_Ratio' in df.columns else 1.0
+    avg_macro = pd.to_numeric(df['Macro_Score'], errors='coerce').mean() if 'Macro_Score' in df.columns else 0.0
+    avg_dom = pd.to_numeric(df['DOM_Ratio'], errors='coerce').mean() if 'DOM_Ratio' in df.columns else 1.0
 
     msg = f"""
 📊 *WEEKLY PERFORMANCE AUDIT REPORT*
