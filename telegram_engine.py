@@ -64,7 +64,7 @@ def get_macro_score():
         else:
             details['TIPS'] = f"0 (Yield Neutral: {tips_5d_delta:.2f}%)"
             
-        # Fed Net Liquidity
+        # Fed Net Liquidity = WALCL - WTREGEN - RRPONTSYD
         walcl = fred.get_series('WALCL').dropna().iloc[-1]
         tga = fred.get_series('WTREGEN').dropna().iloc[-1]
         rrp = fred.get_series('RRPONTSYD').dropna().iloc[-1]
@@ -115,6 +115,7 @@ def get_mtf_fractal_confluence(current_price):
     levels = {}
     
     try:
+        # 1H & 30M Macro Anchors (50% Equilibrium)
         gold_1h = yf.download("GC=F", period="5d", interval="1h", progress=False)
         gold_30m = yf.download("GC=F", period="5d", interval="30m", progress=False)
         
@@ -129,7 +130,7 @@ def get_mtf_fractal_confluence(current_price):
         levels['1H_50'] = level_1h_50
         levels['30M_50'] = level_30m_50
         
-        # 15M Swing Exhaustion
+        # 15M Swing 4X Projection
         gold_15m = yf.download("GC=F", period="3d", interval="15m", progress=False)
         h_15m = gold_15m['High'].values.flatten()
         l_15m = gold_15m['Low'].values.flatten()
@@ -140,7 +141,7 @@ def get_mtf_fractal_confluence(current_price):
         levels['15M_4X_Down'] = exhaust_15m_4x_down
         levels['15M_4X_Up'] = exhaust_15m_4x_up
         
-        # 5M Swing Exhaustion
+        # 5M Swing 4X Projection
         gold_5m = yf.download("GC=F", period="1d", interval="5m", progress=False)
         h_5m = gold_5m['High'].values.flatten()
         l_5m = gold_5m['Low'].values.flatten()
@@ -151,13 +152,15 @@ def get_mtf_fractal_confluence(current_price):
         levels['5M_4X_Down'] = exhaust_5m_4x_down
         levels['5M_4X_Up'] = exhaust_5m_4x_up
         
-        # Bullish Fractal Confluence
+        # Bullish Fractal Confluence:
+        # Macro Equilibrium (1H/30M 50%) aligns with 15M or 5M 4X Downward Exhaustion
         if (abs(level_1h_50 - exhaust_15m_4x_down) <= 3.5 or abs(level_1h_50 - exhaust_5m_4x_down) <= 2.5 or abs(level_30m_50 - exhaust_5m_4x_down) <= 2.0):
             if abs(current_price - level_1h_50) <= 3.0 or abs(current_price - level_30m_50) <= 2.0:
                 confluence_found = True
                 confluence_type = "BULLISH_EXHAUSTION"
                 
-        # Bearish Fractal Confluence
+        # Bearish Fractal Confluence:
+        # Macro Equilibrium (1H/30M 50%) aligns with 15M or 5M 4X Upward Exhaustion
         elif (abs(level_1h_50 - exhaust_15m_4x_up) <= 3.5 or abs(level_1h_50 - exhaust_5m_4x_up) <= 2.5 or abs(level_30m_50 - exhaust_5m_4x_up) <= 2.0):
             if abs(current_price - level_1h_50) <= 3.0 or abs(current_price - level_30m_50) <= 2.0:
                 confluence_found = True
@@ -190,7 +193,7 @@ def get_gold_technicals():
     
     return fallback_price, ema_50, pdh, pdl
 
-# ----------------- 5. ANTI-DUPLICATE & STALE FILTER -----------------
+# ----------------- 5. ANTI-DUPLICATE FILTER -----------------
 def is_duplicate_signal(new_signal, new_price):
     if not os.path.exists(TRADE_LOG_FILE):
         return False
@@ -201,7 +204,7 @@ def is_duplicate_signal(new_signal, new_price):
             return False
         last_trade = active_trades.iloc[-1]
         
-        # Check if last alert was for the same direction and within $2.00 price zone
+        # Prevent re-alerting the exact same trade direction within $2.00 range
         if last_trade['Signal'] == new_signal and abs(float(last_trade['Price']) - new_price) <= 2.0:
             return True
     except Exception:
@@ -231,8 +234,6 @@ def main():
     total_score = macro_score + dom_score
     
     fallback_price, ema_50, pdh, pdl = get_gold_technicals()
-    
-    # Priority: Use 0-second live price from Binance, fallback to Yahoo if API fails
     live_price = get_live_gold_spot()
     current_price = live_price if live_price is not None else fallback_price
     
@@ -241,34 +242,28 @@ def main():
     signal = "NEUTRAL"
     tp = None
     sl = None
-    conviction = "STANDARD"
+    conviction = "NONE"
     
     spread_buffer = 2.50
     base_sl_dist = 10.0
     
-    # BUY SETUP
+    # ---------------- STRICT INSTITUTIONAL GATEKEEPER ----------------
+    # BUY: Macro Bullish + Trend Alignment + MTF Fractal Exhaustion Support + DOM Absorption
     if total_score >= 4 and current_price > ema_50:
-        if abs(current_price - pdh) > 2.0 or current_price > pdh:
+        if confluence_found and conf_type == "BULLISH_EXHAUSTION" and dom_ratio >= 1.20:
             signal = "BUY"
-            if confluence_found and conf_type == "BULLISH_EXHAUSTION" and dom_ratio >= 1.20:
-                conviction = "INSTITUTIONAL GRADE (MTF FRACTAL + DOM)"
-                sl = round(current_price - (base_sl_dist * 0.70 + spread_buffer), 2)
-            else:
-                sl = round(current_price - (base_sl_dist + spread_buffer), 2)
+            conviction = "INSTITUTIONAL GRADE (MTF FRACTAL + DOM)"
+            sl = round(current_price - (base_sl_dist * 0.70 + spread_buffer), 2)  # Tight Stop
             tp = round(max(pdh, current_price + (base_sl_dist * 2) + spread_buffer), 2)
             
-    # SELL SETUP
+    # SELL: Macro Bearish + Trend Alignment + MTF Fractal Exhaustion Resistance + DOM Distribution
     elif total_score <= -4 and current_price < ema_50:
-        if abs(current_price - pdl) > 2.0 or current_price < pdl:
+        if confluence_found and conf_type == "BEARISH_EXHAUSTION" and dom_ratio <= 0.80:
             signal = "SELL"
-            if confluence_found and conf_type == "BEARISH_EXHAUSTION" and dom_ratio <= 0.80:
-                conviction = "INSTITUTIONAL GRADE (MTF FRACTAL + DOM)"
-                sl = round(current_price + (base_sl_dist * 0.70 + spread_buffer), 2)
-            else:
-                sl = round(current_price + (base_sl_dist + spread_buffer), 2)
+            conviction = "INSTITUTIONAL GRADE (MTF FRACTAL + DOM)"
+            sl = round(current_price + (base_sl_dist * 0.70 + spread_buffer), 2)  # Tight Stop
             tp = round(min(pdl, current_price - (base_sl_dist * 2) - spread_buffer), 2)
             
-    # Check duplicate before logging & alerting
     is_duplicate = is_duplicate_signal(signal, current_price) if signal in ["BUY", "SELL"] else False
 
     # Record to CSV Log
@@ -292,19 +287,12 @@ def main():
     else:
         new_record.to_csv(TRADE_LOG_FILE, index=False)
         
-    # Dispatch Telegram Alert (Only if new & valid)
+    # Dispatch Telegram Alert (Only on 100% Verified Confluence)
     if signal in ["BUY", "SELL"] and not is_duplicate:
         icon = "🟢" if signal == "BUY" else "🔴"
         
-        fractal_block = ""
-        if confluence_found:
-            fractal_block = f"""
-🏛 *MTF Fractal Confluence (Exhaustion Met):*
-• *1H 50% Equilibrium:* `${levels.get('1H_50', 0.0):.2f}`
-• *30M 50% Zone:* `${levels.get('30M_50', 0.0):.2f}`
-• *5M 4X Target:* `${levels.get('5M_4X_Down' if signal == 'BUY' else '5M_4X_Up', 0.0):.2f}`
-• *DOM Absorption Ratio:* `{dom_ratio:.2f}`
-"""
+        target_4x = levels.get('5M_4X_Down', 0.0) if signal == "BUY" else levels.get('5M_4X_Up', 0.0)
+        
         msg = f"""
 {icon} *INSTITUTIONAL XAU/USD ALERT: {signal}*
 ⚡ *Conviction Level:* `{conviction}`
@@ -312,20 +300,26 @@ def main():
 📊 *Macro Score:* `{total_score}/9` | *DOM Ratio:* `{dom_ratio:.2f}`
 📈 *Live Spot Price:* `${current_price:.2f}` | *1H 50 EMA:* `${ema_50:.2f}`
 🎯 *PDH:* `${pdh:.2f}` | *PDL:* `${pdl:.2f}`
-{fractal_block}
+
+🏛 *MTF Fractal Matrix (All Exhaustion Met):*
+• *1H 50% Equilibrium:* `${levels.get('1H_50', 0.0):.2f}`
+• *30M 50% Zone:* `${levels.get('30M_50', 0.0):.2f}`
+• *Micro 4X Projection:* `${target_4x:.2f}`
+• *DOM Order Flow:* `{dom_ratio:.2f} (Absorption Wall Verified)`
+
 💼 *Execution Parameters:*
 • *Entry:* `${current_price:.2f}`
 • *Stop Loss:* `${sl:.2f}` (Spread Buffered)
 • *Take Profit:* `${tp:.2f}` (Structure Target)
 
-_Engine: Real-Time Spot + MTF Fractal + Order Flow_
+_Engine: Strict MTF Fractal Exhaustion + DOM Liquidity Engine_
 """
         send_telegram_alert(msg)
-        print(f"Live Alert Dispatched: {signal} at {current_price}")
+        print(f"Institutional Alert Dispatched: {signal} at {current_price}")
     elif is_duplicate:
-        print(f"Skipped alert: Duplicate level already alerted previously ({current_price}).")
+        print(f"Skipped alert: Duplicate level already alerted ({current_price}).")
     else:
-        print(f"Scan complete. Neutral conditions (Score: {total_score}, Live Spot: {current_price})")
+        print(f"Scan complete. No confluence (Macro: {total_score}, DOM: {dom_ratio:.2f}, Fractal: {confluence_type})")
 
 if __name__ == "__main__":
     main()
