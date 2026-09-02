@@ -170,8 +170,9 @@ def get_mtf_fractal_confluence(current_price):
         
     return confluence_found, confluence_type, levels
 
-# ----------------- 4. TECHNICALS + DYNAMIC ATR -----------------
+# ----------------- 4. TECHNICALS + DYNAMIC ATR + DAILY 20 EMA -----------------
 def get_gold_technicals():
+    # 1H Technicals
     gold_1h = yf.download("GC=F", period="5d", interval="1h", progress=False)
     close_1h = gold_1h['Close']
     if isinstance(close_1h, pd.DataFrame):
@@ -180,7 +181,7 @@ def get_gold_technicals():
     fallback_price = float(close_1h.iloc[-1])
     ema_50 = float(close_1h.ewm(span=50, adjust=False).mean().iloc[-1])
     
-    # 14-period ATR calculation on 1H
+    # 1H 14-period ATR
     h = gold_1h['High']
     l = gold_1h['Low']
     c = gold_1h['Close']
@@ -195,26 +196,26 @@ def get_gold_technicals():
     tr = pd.concat([tr1, tr2, tr3], axis=1).max(axis=1)
     atr_val = float(tr.rolling(14).mean().iloc[-1])
     if np.isnan(atr_val) or atr_val <= 0:
-        atr_val = 8.50  # Fallback ATR
+        atr_val = 8.50
 
-    # Previous Day High / Low
-    gold_daily = yf.download("GC=F", period="5d", interval="1d", progress=False)
+    # Daily 20 EMA & Structure (PDH / PDL)
+    gold_daily = yf.download("GC=F", period="60d", interval="1d", progress=False)
+    close_daily = gold_daily['Close']
     high_daily = gold_daily['High']
     low_daily = gold_daily['Low']
-    if isinstance(high_daily, pd.DataFrame):
+    if isinstance(close_daily, pd.DataFrame):
+        close_daily = close_daily.iloc[:, 0]
         high_daily = high_daily.iloc[:, 0]
         low_daily = low_daily.iloc[:, 0]
         
+    daily_ema_20 = float(close_daily.ewm(span=20, adjust=False).mean().iloc[-1])
     pdh = float(high_daily.iloc[-2])
     pdl = float(low_daily.iloc[-2])
     
-    return fallback_price, ema_50, pdh, pdl, round(atr_val, 2)
+    return fallback_price, ema_50, daily_ema_20, pdh, pdl, round(atr_val, 2)
 
 # ----------------- 5. SESSION & DUPLICATE FILTERS -----------------
 def is_high_liquidity_session():
-    """
-    Filters for London and NY Sessions: 07:00 UTC to 18:00 UTC (12:30 PM to 11:30 PM IST)
-    """
     utc_hour = datetime.now(timezone.utc).hour
     return 7 <= utc_hour <= 18
 
@@ -222,7 +223,7 @@ def is_duplicate_signal(new_signal, new_price):
     if not os.path.exists(TRADE_LOG_FILE):
         return False
     try:
-        df = pd.read_csv(TRADE_LOG_FILE)
+        df = pd.read_csv(TRADE_LOG_FILE, on_bad_lines='skip')
         active_trades = df[df['Signal'].isin(['BUY', 'SELL'])]
         if active_trades.empty:
             return False
@@ -255,7 +256,7 @@ def main():
     dom_score, dom_ratio = get_order_book_score()
     total_score = macro_score + dom_score
     
-    fallback_price, ema_50, pdh, pdl, atr_val = get_gold_technicals()
+    fallback_price, ema_50, daily_ema_20, pdh, pdl, atr_val = get_gold_technicals()
     live_price = get_live_gold_spot()
     current_price = live_price if live_price is not None else fallback_price
     
@@ -269,24 +270,24 @@ def main():
     conviction = "NONE"
     
     spread_buffer = 2.50
-    dynamic_sl_dist = round(atr_val * 1.25, 2)  # Adaptive SL
+    dynamic_sl_dist = round(atr_val * 1.25, 2)
     
-    # ---------------- STRICT INSTITUTIONAL GATEKEEPER ----------------
+    # ---------------- STRICT TOP-DOWN INSTITUTIONAL GATEKEEPER ----------------
     if in_session:
-        # BUY SETUP
-        if total_score >= 4 and current_price > ema_50:
+        # BUY: Macro >= 4 + Price > 1H 50 EMA + Price > 1D 20 EMA + MTF Fractal + DOM Absorption
+        if total_score >= 4 and current_price > ema_50 and current_price > daily_ema_20:
             if confluence_found and conf_type == "BULLISH_EXHAUSTION" and dom_ratio >= 1.20:
                 signal = "BUY"
-                conviction = "INSTITUTIONAL GRADE (MTF FRACTAL + DOM)"
+                conviction = "INSTITUTIONAL GRADE (TOP-DOWN + DOM)"
                 sl = round(current_price - (dynamic_sl_dist + spread_buffer), 2)
                 tp = round(max(pdh, current_price + (dynamic_sl_dist * 2) + spread_buffer), 2)
                 be_level = round(current_price + dynamic_sl_dist, 2)
                 
-        # SELL SETUP
-        elif total_score <= -4 and current_price < ema_50:
+        # SELL: Macro <= -4 + Price < 1H 50 EMA + Price < 1D 20 EMA + MTF Fractal + DOM Distribution
+        elif total_score <= -4 and current_price < ema_50 and current_price < daily_ema_20:
             if confluence_found and conf_type == "BEARISH_EXHAUSTION" and dom_ratio <= 0.80:
                 signal = "SELL"
-                conviction = "INSTITUTIONAL GRADE (MTF FRACTAL + DOM)"
+                conviction = "INSTITUTIONAL GRADE (TOP-DOWN + DOM)"
                 sl = round(current_price + (dynamic_sl_dist + spread_buffer), 2)
                 tp = round(min(pdl, current_price - (dynamic_sl_dist * 2) - spread_buffer), 2)
                 be_level = round(current_price - dynamic_sl_dist, 2)
@@ -300,7 +301,8 @@ def main():
     new_record = pd.DataFrame([{
         "Timestamp": timestamp,
         "Price": current_price,
-        "EMA_50": ema_50,
+        "EMA_50_1H": ema_50,
+        "EMA_20_1D": daily_ema_20,
         "PDH": pdh,
         "PDL": pdl,
         "ATR_1H": atr_val,
@@ -328,7 +330,8 @@ def main():
 ⚡ *Conviction Level:* `{conviction}`
 
 📊 *Macro Score:* `{total_score}/9` | *DOM Ratio:* `{dom_ratio:.2f}`
-📈 *Live Spot Price:* `${current_price:.2f}` | *1H 50 EMA:* `${ema_50:.2f}`
+📈 *Live Spot Price:* `${current_price:.2f}`
+🏛 *Trend Anchors:* `1H 50 EMA: ${ema_50:.2f}` | `1D 20 EMA: ${daily_ema_20:.2f}`
 🎯 *PDH:* `${pdh:.2f}` | *PDL:* `${pdl:.2f}` | *1H ATR:* `${atr_val:.2f}`
 
 🏛 *MTF Fractal Matrix (All Exhaustion Met):*
@@ -343,15 +346,15 @@ def main():
 • *Take Profit:* `${tp:.2f}` (Structure Target)
 • *Shift to Breakeven at:* `${be_level:.2f}` (+1R Protection)
 
-_Engine: Strict Institutional Execution (London/NY Prime)_
+_Engine: Top-Down Multi-Timeframe Alignment (Daily + Hourly + Micro)_
 """
         send_telegram_alert(msg)
         print(f"Institutional Alert Dispatched: {signal} at {current_price}")
     elif is_duplicate:
         print(f"Skipped alert: Duplicate level already alerted ({current_price}).")
     else:
-        print(f"Scan complete. Gate closed / No setup (Macro: {total_score}, DOM: {dom_ratio:.2f}, InSession: {in_session})")
+        print(f"Scan complete. Gate closed / No setup (Macro: {total_score}, DOM: {dom_ratio:.2f}, InSession: {in_session}, Daily_EMA: {daily_ema_20:.2f})")
 
 if __name__ == "__main__":
     main()
-                                                                                                               
+            
