@@ -12,7 +12,38 @@ TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
 TRADE_LOG_FILE = "trade_log.csv"
 
-# ----------------- 1. MACRO & LIQUIDITY ENGINE -----------------
+# ----------------- 1. REAL-TIME SPOT PRICE & ORDER BOOK (BINANCE) -----------------
+def get_live_gold_spot():
+    """
+    Fetches 0-second lag real-time Gold Spot proxy price from Binance.
+    """
+    try:
+        url = "https://api.binance.com/api/v3/ticker/price?symbol=PAXGUSDT"
+        res = requests.get(url, timeout=5).json()
+        return float(res['price'])
+    except Exception as e:
+        print(f"Binance real-time price fetch error: {e}")
+        return None
+
+def get_order_book_score():
+    score = 0
+    ratio = 1.0
+    try:
+        url = "https://api.binance.com/api/v3/depth?symbol=PAXGUSDT&limit=20"
+        res = requests.get(url, timeout=5).json()
+        bids = sum([float(x[1]) for x in res['bids']])
+        asks = sum([float(x[1]) for x in res['asks']])
+        if asks > 0:
+            ratio = bids / asks
+            if ratio >= 1.25:
+                score = 1
+            elif ratio <= 0.75:
+                score = -1
+    except Exception:
+        pass
+    return score, ratio
+
+# ----------------- 2. MACRO & LIQUIDITY ENGINE -----------------
 def get_macro_score():
     score = 0
     details = {}
@@ -33,7 +64,7 @@ def get_macro_score():
         else:
             details['TIPS'] = f"0 (Yield Neutral: {tips_5d_delta:.2f}%)"
             
-        # Fed Net Liquidity = WALCL - WTREGEN (TGA) - RRPONTSYD (RRP)
+        # Fed Net Liquidity
         walcl = fred.get_series('WALCL').dropna().iloc[-1]
         tga = fred.get_series('WTREGEN').dropna().iloc[-1]
         rrp = fred.get_series('RRPONTSYD').dropna().iloc[-1]
@@ -77,33 +108,13 @@ def get_macro_score():
         
     return score, details
 
-# ----------------- 2. ORDER BOOK DEPTH (DOM) -----------------
-def get_order_book_score():
-    score = 0
-    ratio = 1.0
-    try:
-        url = "https://api.binance.com/api/v3/depth?symbol=PAXGUSDT&limit=20"
-        res = requests.get(url, timeout=5).json()
-        bids = sum([float(x[1]) for x in res['bids']])
-        asks = sum([float(x[1]) for x in res['asks']])
-        if asks > 0:
-            ratio = bids / asks
-            if ratio >= 1.25:
-                score = 1
-            elif ratio <= 0.75:
-                score = -1
-    except Exception:
-        pass
-    return score, ratio
-
-# ----------------- 3. MULTI-TIMEFRAME FRACTAL LIMIT ENGINE (1H, 30M, 15M, 5M) -----------------
+# ----------------- 3. MULTI-TIMEFRAME FRACTAL LIMIT ENGINE -----------------
 def get_mtf_fractal_confluence(current_price):
     confluence_found = False
     confluence_type = "NONE"
     levels = {}
     
     try:
-        # 1H & 30M Macro Anchors (50% Equilibrium)
         gold_1h = yf.download("GC=F", period="5d", interval="1h", progress=False)
         gold_30m = yf.download("GC=F", period="5d", interval="30m", progress=False)
         
@@ -118,7 +129,7 @@ def get_mtf_fractal_confluence(current_price):
         levels['1H_50'] = level_1h_50
         levels['30M_50'] = level_30m_50
         
-        # 15M Structural Swing 4X Projection
+        # 15M Swing Exhaustion
         gold_15m = yf.download("GC=F", period="3d", interval="15m", progress=False)
         h_15m = gold_15m['High'].values.flatten()
         l_15m = gold_15m['Low'].values.flatten()
@@ -129,7 +140,7 @@ def get_mtf_fractal_confluence(current_price):
         levels['15M_4X_Down'] = exhaust_15m_4x_down
         levels['15M_4X_Up'] = exhaust_15m_4x_up
         
-        # 5M Micro Swing 4X Projection
+        # 5M Swing Exhaustion
         gold_5m = yf.download("GC=F", period="1d", interval="5m", progress=False)
         h_5m = gold_5m['High'].values.flatten()
         l_5m = gold_5m['Low'].values.flatten()
@@ -140,15 +151,13 @@ def get_mtf_fractal_confluence(current_price):
         levels['5M_4X_Down'] = exhaust_5m_4x_down
         levels['5M_4X_Up'] = exhaust_5m_4x_up
         
-        # Bullish Fractal Confluence:
-        # Macro Equilibrium (1H/30M 50%) aligns with 15M or 5M 4X Downward Exhaustion
+        # Bullish Fractal Confluence
         if (abs(level_1h_50 - exhaust_15m_4x_down) <= 3.5 or abs(level_1h_50 - exhaust_5m_4x_down) <= 2.5 or abs(level_30m_50 - exhaust_5m_4x_down) <= 2.0):
             if abs(current_price - level_1h_50) <= 3.0 or abs(current_price - level_30m_50) <= 2.0:
                 confluence_found = True
                 confluence_type = "BULLISH_EXHAUSTION"
                 
-        # Bearish Fractal Confluence:
-        # Macro Equilibrium (1H/30M 50%) aligns with 15M or 5M 4X Upward Exhaustion
+        # Bearish Fractal Confluence
         elif (abs(level_1h_50 - exhaust_15m_4x_up) <= 3.5 or abs(level_1h_50 - exhaust_5m_4x_up) <= 2.5 or abs(level_30m_50 - exhaust_5m_4x_up) <= 2.0):
             if abs(current_price - level_1h_50) <= 3.0 or abs(current_price - level_30m_50) <= 2.0:
                 confluence_found = True
@@ -159,14 +168,14 @@ def get_mtf_fractal_confluence(current_price):
         
     return confluence_found, confluence_type, levels
 
-# ----------------- 4. TECHNICAL & LIQUIDITY LEVELS (1H EMA & PDH/PDL) -----------------
+# ----------------- 4. HISTORICAL TECHNICALS (1H EMA & PDH/PDL) -----------------
 def get_gold_technicals():
     gold_1h = yf.download("GC=F", period="5d", interval="1h", progress=False)
     close_1h = gold_1h['Close']
     if isinstance(close_1h, pd.DataFrame):
         close_1h = close_1h.iloc[:, 0]
     
-    current_price = float(close_1h.iloc[-1])
+    fallback_price = float(close_1h.iloc[-1])
     ema_50 = float(close_1h.ewm(span=50, adjust=False).mean().iloc[-1])
     
     gold_daily = yf.download("GC=F", period="5d", interval="1d", progress=False)
@@ -179,12 +188,30 @@ def get_gold_technicals():
     pdh = float(high_daily.iloc[-2])
     pdl = float(low_daily.iloc[-2])
     
-    return current_price, ema_50, pdh, pdl
+    return fallback_price, ema_50, pdh, pdl
 
-# ----------------- 5. TELEGRAM DISPATCH -----------------
+# ----------------- 5. ANTI-DUPLICATE & STALE FILTER -----------------
+def is_duplicate_signal(new_signal, new_price):
+    if not os.path.exists(TRADE_LOG_FILE):
+        return False
+    try:
+        df = pd.read_csv(TRADE_LOG_FILE)
+        active_trades = df[df['Signal'].isin(['BUY', 'SELL'])]
+        if active_trades.empty:
+            return False
+        last_trade = active_trades.iloc[-1]
+        
+        # Check if last alert was for the same direction and within $2.00 price zone
+        if last_trade['Signal'] == new_signal and abs(float(last_trade['Price']) - new_price) <= 2.0:
+            return True
+    except Exception:
+        pass
+    return False
+
+# ----------------- 6. TELEGRAM DISPATCH -----------------
 def send_telegram_alert(message):
     if not TELEGRAM_BOT_TOKEN or not TELEGRAM_CHAT_ID:
-        print("Telegram configuration missing.")
+        print("Telegram credentials missing.")
         return
     url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
     payload = {
@@ -197,13 +224,18 @@ def send_telegram_alert(message):
     except Exception as e:
         print(f"Failed to dispatch Telegram alert: {e}")
 
-# ----------------- 6. MAIN EXECUTION ENGINE -----------------
+# ----------------- 7. MAIN ENGINE EXECUTION -----------------
 def main():
     macro_score, macro_details = get_macro_score()
     dom_score, dom_ratio = get_order_book_score()
-    
     total_score = macro_score + dom_score
-    current_price, ema_50, pdh, pdl = get_gold_technicals()
+    
+    fallback_price, ema_50, pdh, pdl = get_gold_technicals()
+    
+    # Priority: Use 0-second live price from Binance, fallback to Yahoo if API fails
+    live_price = get_live_gold_spot()
+    current_price = live_price if live_price is not None else fallback_price
+    
     confluence_found, conf_type, levels = get_mtf_fractal_confluence(current_price)
     
     signal = "NEUTRAL"
@@ -220,7 +252,7 @@ def main():
             signal = "BUY"
             if confluence_found and conf_type == "BULLISH_EXHAUSTION" and dom_ratio >= 1.20:
                 conviction = "INSTITUTIONAL GRADE (MTF FRACTAL + DOM)"
-                sl = round(current_price - (base_sl_dist * 0.70 + spread_buffer), 2)  # Tight Stop on Confluence
+                sl = round(current_price - (base_sl_dist * 0.70 + spread_buffer), 2)
             else:
                 sl = round(current_price - (base_sl_dist + spread_buffer), 2)
             tp = round(max(pdh, current_price + (base_sl_dist * 2) + spread_buffer), 2)
@@ -231,11 +263,14 @@ def main():
             signal = "SELL"
             if confluence_found and conf_type == "BEARISH_EXHAUSTION" and dom_ratio <= 0.80:
                 conviction = "INSTITUTIONAL GRADE (MTF FRACTAL + DOM)"
-                sl = round(current_price + (base_sl_dist * 0.70 + spread_buffer), 2)  # Tight Stop on Confluence
+                sl = round(current_price + (base_sl_dist * 0.70 + spread_buffer), 2)
             else:
                 sl = round(current_price + (base_sl_dist + spread_buffer), 2)
             tp = round(min(pdl, current_price - (base_sl_dist * 2) - spread_buffer), 2)
             
+    # Check duplicate before logging & alerting
+    is_duplicate = is_duplicate_signal(signal, current_price) if signal in ["BUY", "SELL"] else False
+
     # Record to CSV Log
     timestamp = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC")
     new_record = pd.DataFrame([{
@@ -246,7 +281,7 @@ def main():
         "PDL": pdl,
         "Macro_Score": total_score,
         "DOM_Ratio": round(dom_ratio, 2),
-        "Signal": signal,
+        "Signal": signal if not is_duplicate else "NEUTRAL (DUPLICATE_FILTERED)",
         "Conviction": conviction,
         "SL": sl,
         "TP": tp
@@ -257,8 +292,8 @@ def main():
     else:
         new_record.to_csv(TRADE_LOG_FILE, index=False)
         
-    # Dispatch Telegram Alert
-    if signal in ["BUY", "SELL"]:
+    # Dispatch Telegram Alert (Only if new & valid)
+    if signal in ["BUY", "SELL"] and not is_duplicate:
         icon = "🟢" if signal == "BUY" else "🔴"
         
         fractal_block = ""
@@ -275,7 +310,7 @@ def main():
 ⚡ *Conviction Level:* `{conviction}`
 
 📊 *Macro Score:* `{total_score}/9` | *DOM Ratio:* `{dom_ratio:.2f}`
-📈 *Spot Price:* `${current_price:.2f}` | *1H 50 EMA:* `${ema_50:.2f}`
+📈 *Live Spot Price:* `${current_price:.2f}` | *1H 50 EMA:* `${ema_50:.2f}`
 🎯 *PDH:* `${pdh:.2f}` | *PDL:* `${pdl:.2f}`
 {fractal_block}
 💼 *Execution Parameters:*
@@ -283,13 +318,15 @@ def main():
 • *Stop Loss:* `${sl:.2f}` (Spread Buffered)
 • *Take Profit:* `${tp:.2f}` (Structure Target)
 
-_Engine: Macro + MTF Fractal Matrix + Order Flow_
+_Engine: Real-Time Spot + MTF Fractal + Order Flow_
 """
         send_telegram_alert(msg)
-        print(f"Triggered {signal} ({conviction}) alert at {current_price}")
+        print(f"Live Alert Dispatched: {signal} at {current_price}")
+    elif is_duplicate:
+        print(f"Skipped alert: Duplicate level already alerted previously ({current_price}).")
     else:
-        print(f"Scan complete. Neutral conditions (Score: {total_score}, Spot: {current_price})")
+        print(f"Scan complete. Neutral conditions (Score: {total_score}, Live Spot: {current_price})")
 
 if __name__ == "__main__":
     main()
-    
+        
