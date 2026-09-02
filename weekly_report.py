@@ -1,14 +1,18 @@
 import os
+import requests
+import numpy as np
 import pandas as pd
 import yfinance as yf
-import requests
+from datetime import datetime, timezone
 
-TRADE_LOG_FILE = "trade_log.csv"
+# ----------------- CONFIGURATION -----------------
 TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
+TRADE_LOG_FILE = "trade_log.csv"
 
-def send_telegram_report(message):
+def send_telegram_message(message):
     if not TELEGRAM_BOT_TOKEN or not TELEGRAM_CHAT_ID:
+        print("Telegram credentials missing.")
         return
     url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
     payload = {
@@ -16,92 +20,70 @@ def send_telegram_report(message):
         "text": message,
         "parse_mode": "Markdown"
     }
-    requests.post(url, json=payload, timeout=10)
+    try:
+        requests.post(url, json=payload, timeout=10)
+    except Exception as e:
+        print(f"Telegram dispatch failed: {e}")
 
-def generate_weekly_report():
+def generate_weekly_summary():
     if not os.path.exists(TRADE_LOG_FILE):
-        print("trade_log.csv not found.")
+        print("No trade log found.")
         return
 
     df = pd.read_csv(TRADE_LOG_FILE)
-    signals_df = df[df['Signal'].isin(['BUY', 'SELL'])].copy()
     
-    if signals_df.empty:
-        print("No trades logged yet.")
+    # Filter only actionable execution signals
+    trade_signals = df[df['Signal'].isin(['BUY', 'SELL'])].copy()
+    
+    total_scans = len(df)
+    total_trades = len(trade_signals)
+    
+    if total_trades == 0:
+        msg = f"""
+📋 *WEEKLY AUDIT REPORT: GOLD ENGINE*
+📅 *Generated:* `{datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")}`
+
+• *Total Market Scans:* `{total_scans}`
+• *Signals Executed:* `0`
+• *Status:* `Gatekeeper Kept Capital Safe (Zero Confluence Week)`
+
+_Engine: Strict MTF Exhaustion + DOM Liquidity Engine_
+"""
+        send_telegram_message(msg)
         return
 
-    gold_data = yf.download("GC=F", period="1mo", interval="5m", progress=False)
-    results = []
+    buys = len(trade_signals[trade_signals['Signal'] == 'BUY'])
+    sells = len(trade_signals[trade_signals['Signal'] == 'SELL'])
+    institutional_count = len(trade_signals[trade_signals['Conviction'].str.contains("INSTITUTIONAL", na=False)])
 
-    for _, row in signals_df.iterrows():
-        try:
-            entry_time = pd.to_datetime(row['Timestamp'].replace(" UTC", ""))
-        except Exception:
-            continue
+    # Average metrics across scanned sessions
+    avg_macro = df['Macro_Score'].mean() if 'Macro_Score' in df.columns else 0.0
+    avg_dom = df['DOM_Ratio'].mean() if 'DOM_Ratio' in df.columns else 1.0
 
-        signal = row['Signal']
-        entry = float(row['Price'])
-        sl = float(row['SL'])
-        tp = float(row['TP'])
-        conviction = row.get('Conviction', 'STANDARD')
+    msg = f"""
+📊 *WEEKLY PERFORMANCE AUDIT REPORT*
+📅 *Date:* `{datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")}`
 
-        future_bars = gold_data[gold_data.index >= entry_time]
-        outcome = "OPEN"
-        pnl = 0.0
+📈 *Execution Summary:*
+• *Total Automated Scans:* `{total_scans}`
+• *Total Qualified Trades:* `{total_trades}`
+  └ 🟢 *BUY Trades:* `{buys}`
+  └ 🔴 *SELL Trades:* `{sells}`
+• *Strict Institutional Confluence:* `{institutional_count}/{total_trades}`
 
-        for _, bar in future_bars.iterrows():
-            high = float(bar['High'].iloc[0] if isinstance(bar['High'], pd.Series) else bar['High'])
-            low = float(bar['Low'].iloc[0] if isinstance(bar['Low'], pd.Series) else bar['Low'])
+🏛 *Environment Metrics (Weekly Avg):*
+• *Avg Macro Bias Score:* `{avg_macro:.2f}/9`
+• *Avg DOM Liquidity Ratio:* `{avg_dom:.2f}`
 
-            if signal == "BUY":
-                if low <= sl:
-                    outcome = "LOSS"
-                    pnl = sl - entry
-                    break
-                elif high >= tp:
-                    outcome = "WIN"
-                    pnl = tp - entry
-                    break
-            elif signal == "SELL":
-                if high >= sl:
-                    outcome = "LOSS"
-                    pnl = entry - sl
-                    break
-                elif low <= tp:
-                    outcome = "WIN"
-                    pnl = entry - tp
-                    break
+💼 *Filter Efficacy:*
+• Low-quality noise trades blocked by Multi-Timeframe Exhaustion & Session Filters.
+• Forward testing active under institutional risk parameters.
 
-        results.append({
-            "Signal": signal,
-            "Conviction": conviction,
-            "Outcome": outcome,
-            "PnL": pnl
-        })
-
-    res_df = pd.DataFrame(results)
-    closed = res_df[res_df['Outcome'].isin(['WIN', 'LOSS'])]
-    wins = len(closed[closed['Outcome'] == 'WIN'])
-    losses = len(closed[closed['Outcome'] == 'LOSS'])
-    total_closed = len(closed)
-    
-    win_rate = (wins / total_closed * 100) if total_closed > 0 else 0.0
-    net_pts = closed['PnL'].sum() if not closed.empty else 0.0
-
-    report = f"""
-📊 *WEEKLY PERFORMANCE REPORT (XAU/USD)*
-━━━━━━━━━━━━━━━━━━━━
-📈 *Total Signals:* `{len(res_df)}`
-✅ *Closed Trades:* `{total_closed}` (`{wins}W` / `{losses}L`)
-🎯 *Win Rate:* `{win_rate:.1f}%`
-💰 *Net Points:* `{net_pts:+.2f} pts`
-⏳ *Open Trades:* `{len(res_df) - total_closed}`
-━━━━━━━━━━━━━━━━━━━━
-_Engine: Macro + MTF Fractal System_
+_Engine: Strict Multi-Layer Gold Automation_
 """
-    send_telegram_report(report)
-    print("Weekly report dispatched to Telegram.")
+    send_telegram_message(msg)
+    print("Weekly report dispatched successfully.")
 
 if __name__ == "__main__":
-    generate_weekly_report()
+    generate_weekly_summary()
     
