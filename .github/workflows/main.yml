@@ -1,33 +1,35 @@
-name: Gold Macro Telegram Engine
+name: Gold Macro Engine & Alerts
 
 on:
   schedule:
-    - cron: '30 * * * 1-5'
+    # हर 15 मिनट में रन (सोमवार से शुक्रवार)
+    - cron: '*/15 * * * 1-5'
   workflow_dispatch:
-
-permissions:
-  contents: write
 
 jobs:
   run-alerts:
     runs-on: ubuntu-latest
+
     steps:
-      - uses: actions/checkout@v3
+      - name: Checkout Repository
+        uses: actions/checkout@v4
 
       - name: Set up Python
-        uses: actions/setup-python@v4
+        uses: setup-python@v5
         with:
-          python-version: '3.10'
+          python-version: '3.11'
 
-      - name: Install dependencies
+      - name: Install Dependencies
         run: |
-          pip install yfinance fredapi pandas requests
+          python -m pip install --upgrade pip
+          pip install --upgrade --no-cache-dir requests pandas numpy yfinance curl_cffi
 
-      - name: Run Script
+      - name: Run Engine Script
         env:
-          FRED_API_KEY: ${{ secrets.FRED_API_KEY }}
+          TWELVE_DATA_API_KEY: ${{ secrets.TWELVE_DATA_API_KEY }}
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          FRED_API_KEY: ${{ secrets.FRED_API_KEY }}
         run: python telegram_engine.py
 
       - name: Commit and Push Trade Log
@@ -35,6 +37,5 @@ jobs:
           git config --global user.name "github-actions[bot]"
           git config --global user.email "github-actions[bot]@users.noreply.github.com"
           git add trade_log.csv || true
-          git commit -m "Auto-update trade log [skip ci]" || true
-          git push
+          git diff --quiet && git diff --staged --quiet || (git commit -m "Auto-update trade log [skip ci]" && git push)
           
