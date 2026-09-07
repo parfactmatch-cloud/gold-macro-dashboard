@@ -5,20 +5,20 @@ import numpy as np
 from datetime import datetime, timezone, time
 
 # ================= 1. CONFIGURATION & SECRETS =================
-TWELVE_DATA_API_KEY = os.getenv("TWELVE_DATA_API_KEY")
-TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
-TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
+TWELVE_DATA_API_KEY = os.getenv("TWELVE_DATA_API_KEY", "").strip()
+TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN", "").strip()
+TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID", "").strip()
 SCALP_LOG_FILE = "scalp_log.csv"
 
-# ================= 2. LIVE 5-MINUTE DATA FEED =================
+# ================= 2. LIVE 5-MINUTE DATA FEED (FIXED) =================
 def fetch_5m_candles(outputsize=40):
     if not TWELVE_DATA_API_KEY:
-        print("[ERROR] TWELVE_DATA_API_KEY is not set.")
+        print("[ERROR] TWELVE_DATA_API_KEY is missing.")
         return None
 
     url = f"https://api.twelvedata.com/time_series?symbol=XAU/USD&interval=5min&outputsize={outputsize}&apikey={TWELVE_DATA_API_KEY}"
     try:
-        res = requests.get(url, timeout=12).json()
+        res = requests.get(url, timeout=15).json()
         if "values" not in res or not res["values"]:
             print(f"[API ERROR] Twelve Data Response: {res.get('message', 'No candle values')}")
             return None
@@ -28,11 +28,18 @@ def fetch_5m_candles(outputsize=40):
         
         numeric_cols = ["open", "high", "low", "close"]
         df[numeric_cols] = df[numeric_cols].apply(pd.to_numeric, errors="coerce")
-        df["volume"] = pd.to_numeric(df.get("volume", 0), errors="coerce").fillna(0)
+        
+        # Bug Fix: Safe check for missing volume column in XAU/USD feed
+        if "volume" in df.columns:
+            df["volume"] = pd.to_numeric(df["volume"], errors="coerce").fillna(0)
+        else:
+            df["volume"] = 0
 
         # Sort chronologically (Oldest -> Newest)
         df = df.sort_values("time").reset_index(drop=True)
+        print(f"[DATA SUCCESS] 5M Candles Loaded: {len(df)} bars. Spot: ${df['close'].iloc[-1]:.2f}")
         return df
+
     except Exception as e:
         print(f"[FETCH ERROR] Network error fetching 5M candles: {e}")
         return None
@@ -63,7 +70,7 @@ def detect_scalp_setup(df):
     dt_upper_4x = swing_high + (base_range * 3)
     dt_lower_4x = swing_low - (base_range * 3)
 
-    # Zone Buffers (Base Range ka 30%)
+    # Zone Buffers (Base Range 30%)
     in_buy_zone = (df["low"].iloc[-1] <= (swing_low + (base_range * 0.3))) or (df["low"].iloc[-1] <= dt_lower_4x)
     in_sell_zone = (df["high"].iloc[-1] >= (swing_high - (base_range * 0.3))) or (df["high"].iloc[-1] >= dt_upper_4x)
 
@@ -74,10 +81,10 @@ def detect_scalp_setup(df):
     curr_l = df["low"].iloc[-1]
     curr_ema = df["ema_7"].iloc[-1]
 
-    # Bullish Bounce: 7 EMA ko touch/pierce kiya, par close EMA ke upar aur green candle bani
+    # Bullish Bounce: 7 EMA touch/pierce, close above EMA, green candle
     bullish_trigger = in_buy_zone and (curr_l <= curr_ema) and (curr_c > curr_ema) and (curr_c > curr_o)
 
-    # Bearish Rejection: 7 EMA ko touch/pierce kiya, par close EMA ke niche aur red candle bani
+    # Bearish Rejection: 7 EMA touch/pierce, close below EMA, red candle
     bearish_trigger = in_sell_zone and (curr_h >= curr_ema) and (curr_c < curr_ema) and (curr_c < curr_o)
 
     if bullish_trigger:
@@ -99,7 +106,7 @@ def detect_scalp_setup(df):
 
     return {"trigger": False, "action": "NONE", "ema_7": round(curr_ema, 2)}
 
-# ================= 5. DEDUPLICATION & LOGGING =================
+# ================= 5. DEDUPLICATION & LOGGING (FIXED) =================
 def is_duplicate_alert(action, price):
     if not os.path.exists(SCALP_LOG_FILE):
         return False
@@ -109,7 +116,6 @@ def is_duplicate_alert(action, price):
         if signals.empty:
             return False
         last_sig = signals.iloc[-1]
-        # Agar picche 15 minute ke andar same action aur similar price (<= $1.5) par alert gaya ho
         if last_sig["action"] == action and abs(float(last_sig["price"]) - price) <= 1.5:
             return True
     except Exception:
@@ -117,6 +123,9 @@ def is_duplicate_alert(action, price):
     return False
 
 def record_scalp_log(action, price, ema_7):
+    """
+    Always ensures scalp_log.csv exists to prevent Git commit errors.
+    """
     now_utc = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
     header = "timestamp,action,price,ema_7\n"
     entry = f"{now_utc},{action},{price:.2f},{ema_7:.2f}\n"
@@ -127,6 +136,7 @@ def record_scalp_log(action, price, ema_7):
 
     with open(SCALP_LOG_FILE, "a") as f:
         f.write(entry)
+    print(f"[LOGGED] {entry.strip()}")
 
 # ================= 6. TELEGRAM NOTIFIER =================
 def send_scalp_telegram(action, price, ema_7, sl, tp, zone):
@@ -148,7 +158,7 @@ def send_scalp_telegram(action, price, ema_7, sl, tp, zone):
         f"🎯 *Take Profit*: `${tp:.2f}` (1:2 R:R Ratio)\n"
         f"⏰ *Time (UTC)*: `{datetime.now(timezone.utc).strftime('%H:%M:%S')}`\n"
         f"━━━━━━━━━━━━━━━━━━━━\n"
-        f"⚡ _Rule: Trail stop to breakeven once price moves +1.5R._"
+        f"⚡ _Rule: Shift SL to Breakeven after +1.5R move._"
     )
 
     url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
@@ -164,21 +174,23 @@ def send_scalp_telegram(action, price, ema_7, sl, tp, zone):
 def run():
     print(f"[SCALPER RUN] UTC: {datetime.now(timezone.utc).strftime('%H:%M:%S')}")
     
-    # Step 1: Session Gate
+    # 1. Session Gate
     if not is_active_session():
         print("[SCALPER HOLD] Asian off-hours session. Gate locked to prevent noise.")
+        record_scalp_log("SESSION_LOCKED", 0.0, 0.0)
         return
 
-    # Step 2: Fetch 5M Candles
+    # 2. Fetch 5M Candles
     df_5m = fetch_5m_candles(outputsize=40)
     if df_5m is None or len(df_5m) < 20:
-        print("[SCALPER HOLD] Unable to fetch 5M candles.")
+        print("[SCALPER HOLD] Unable to process 5M candles.")
+        record_scalp_log("DATA_FETCH_FAILED", 0.0, 0.0)
         return
 
     current_price = df_5m["close"].iloc[-1]
     setup = detect_scalp_setup(df_5m)
 
-    # Step 3: Trigger Evaluation
+    # 3. Trigger Evaluation
     if setup["trigger"]:
         action = setup["action"]
         ema_val = setup["ema_7"]
@@ -196,11 +208,11 @@ def run():
             send_scalp_telegram(action, current_price, ema_val, sl, tp, zone)
             record_scalp_log(action, current_price, ema_val)
         else:
-            print(f"[SCALPER DEDUP] Repeated alert skipped for price {current_price}")
+            print(f"[SCALPER DEDUP] Repeated alert skipped for price ${current_price:.2f}")
     else:
         print(f"[NO SETUP] Latest: ${current_price:.2f} | 7-EMA: ${setup.get('ema_7', 0)}")
         record_scalp_log("NO_SETUP", current_price, setup.get("ema_7", 0))
 
 if __name__ == "__main__":
     run()
-      
+    
