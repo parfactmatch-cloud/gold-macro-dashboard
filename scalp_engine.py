@@ -2,7 +2,7 @@
 ===============================================================================
 PROJECT: QUANTITATIVE HIGH-FREQUENCY SCALPING ENGINE (XAU/USD)
 ARCHITECTURE: INSTITUTIONAL MONEY-FLOW ORIGIN + 7-EMA EULER DYNAMICS
-VERSION: 3.6 (BUG FIX: SAFE NON-SERIES VOLUME EXTRACTION + EVT TAIL-RISK)
+VERSION: 3.7 (SYNTAX FIX: RESOLVED F-STRING TERNARY FORMAT SPECIFIER)
 ===============================================================================
 """
 
@@ -27,7 +27,7 @@ LOOKBACK_SWING = 20
 VOLATILITY_LOOKBACK = 14
 MIN_SLOPE_THRESHOLD = 0.04  # Minimum first derivative magnitude (USD/candle)
 
-# ================= 2. DATA ACQUISITION (FIXED) =================
+# ================= 2. DATA ACQUISITION =================
 def fetch_time_series(interval="5min", n_bars=50):
     if not TWELVE_DATA_API_KEY:
         print("[ERROR] TWELVE_DATA_API_KEY missing.")
@@ -49,7 +49,6 @@ def fetch_time_series(interval="5min", n_bars=50):
         for col in ["open", "high", "low", "close"]:
             df[col] = pd.to_numeric(df[col], errors="coerce")
 
-        # Bug Fix: Safe extraction without calling Series methods on missing keys
         if "volume" in df.columns:
             df["volume"] = pd.to_numeric(df["volume"], errors="coerce").fillna(0.0)
         else:
@@ -85,8 +84,8 @@ def compute_30m_regime_and_origin(df_30m):
     ema_20_30m = pd.Series(close).ewm(span=20, adjust=False).mean().iloc[-1]
     curr_c = close[-1]
 
-    bullish_origin_base = low[-10:].min()   # Base liquidity where buyers entered
-    bearish_origin_base = high[-10:].max()  # Supply cap where profit was booked
+    bullish_origin_base = float(low[-10:].min())   # Base liquidity where buyers entered
+    bearish_origin_base = float(high[-10:].max())  # Supply cap where profit was booked
 
     if (is_hh or is_hl) and curr_c > ema_20_30m:
         regime = "BULLISH_DRIFT"
@@ -291,7 +290,7 @@ def run():
     # 2. HTF Regime & Cost Origin Check
     regime_30m, bull_origin, bear_origin = compute_30m_regime_and_origin(df_30m)
 
-    # 3. Microstructure Vector Evaluation
+    # 3. 7-EMA Microstructure & Tail-Risk Discrimination
     decision = evaluate_quant_scalp(df_5m, regime_30m, bull_origin, bear_origin)
 
     if decision["signal"]:
@@ -306,13 +305,15 @@ def run():
         sl = round(c_price - risk_unit, 2) if side == "SCALP_BUY" else round(c_price + risk_unit, 2)
         tp = round(c_price + reward_unit, 2) if side == "SCALP_BUY" else round(c_price - reward_unit, 2)
 
+        anchor_level = bull_origin if side == "SCALP_BUY" else bear_origin
         icon = "⚡🟢 *QUANT LONG SCALP*" if side == "SCALP_BUY" else "⚡🔴 *QUANT SHORT SCALP*"
+
         card = (
             f"{icon}\n"
             f"━━━━━━━━━━━━━━━━━━━━━━━\n"
             f"🌐 *30M Regime Vector*: `{regime_30m}`\n"
             f"📐 *EMA-7 Dynamics*: `v={v:+.2f} | a={a:+.2f}`\n"
-            f"🏛 *Money Flow Anchor*: `${bull_origin:.2f if side=='SCALP_BUY' else bear_origin:.2f}`\n"
+            f"🏛 *Money Flow Anchor*: `${anchor_level:.2f}`\n"
             f"💵 *Execution Spot*: `${c_price:.2f}`\n"
             f"📊 *Volatility (5M ATR)*: `${atr_val:.2f}`\n"
             f"━━━━━━━━━━━━━━━━━━━━━━━\n"
