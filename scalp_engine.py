@@ -2,7 +2,7 @@
 ===============================================================================
 PROJECT: QUANTITATIVE HIGH-FREQUENCY SCALPING ENGINE (XAU/USD)
 ARCHITECTURE: INSTITUTIONAL MONEY-FLOW ORIGIN + 7-EMA EULER DYNAMICS
-VERSION: 3.5 (QUANT SPECIFICATION WITH DUAL-SIDE TAIL-RISK ELIMINATION)
+VERSION: 3.6 (BUG FIX: SAFE NON-SERIES VOLUME EXTRACTION + EVT TAIL-RISK)
 ===============================================================================
 """
 
@@ -27,7 +27,7 @@ LOOKBACK_SWING = 20
 VOLATILITY_LOOKBACK = 14
 MIN_SLOPE_THRESHOLD = 0.04  # Minimum first derivative magnitude (USD/candle)
 
-# ================= 2. DATA ACQUISITION =================
+# ================= 2. DATA ACQUISITION (FIXED) =================
 def fetch_time_series(interval="5min", n_bars=50):
     if not TWELVE_DATA_API_KEY:
         print("[ERROR] TWELVE_DATA_API_KEY missing.")
@@ -42,11 +42,19 @@ def fetch_time_series(interval="5min", n_bars=50):
     try:
         res = requests.get(url, params=params, timeout=12).json()
         if "values" not in res or not res["values"]:
+            print(f"[API ERROR] {interval}: {res.get('message', 'No values returned')}")
             return None
+        
         df = pd.DataFrame(res["values"]).rename(columns={"datetime": "timestamp"})
         for col in ["open", "high", "low", "close"]:
             df[col] = pd.to_numeric(df[col], errors="coerce")
-        df["volume"] = pd.to_numeric(df.get("volume", 0), errors="coerce").fillna(0)
+
+        # Bug Fix: Safe extraction without calling Series methods on missing keys
+        if "volume" in df.columns:
+            df["volume"] = pd.to_numeric(df["volume"], errors="coerce").fillna(0.0)
+        else:
+            df["volume"] = 0.0
+
         return df.sort_values("timestamp").reset_index(drop=True)
     except Exception as e:
         print(f"[FETCH ERROR] {interval}: {e}")
@@ -66,7 +74,6 @@ def compute_30m_regime_and_origin(df_30m):
     high = df_30m["high"].values
     low = df_30m["low"].values
 
-    # Pivot analysis over rolling window
     h_win = high[-8:]
     l_win = low[-8:]
 
@@ -78,7 +85,6 @@ def compute_30m_regime_and_origin(df_30m):
     ema_20_30m = pd.Series(close).ewm(span=20, adjust=False).mean().iloc[-1]
     curr_c = close[-1]
 
-    # Institutional Origin Anchors (Origin of Imbalance)
     bullish_origin_base = low[-10:].min()   # Base liquidity where buyers entered
     bearish_origin_base = high[-10:].max()  # Supply cap where profit was booked
 
@@ -112,9 +118,6 @@ def calculate_parkinson_atr(df, period=VOLATILITY_LOOKBACK):
     return float(atr) if not np.isnan(atr) and atr > 0 else 1.80
 
 def compute_dt_exhaustion(df_5m, lookback=LOOKBACK_SWING):
-    """
-    Calculates DT base swing range and Asymmetric 4X Exhaustion Bounds
-    """
     sub_df = df_5m.iloc[-lookback:]
     h_max = sub_df["high"].max()
     l_min = sub_df["low"].min()
@@ -155,10 +158,7 @@ def evaluate_quant_scalp(df_5m, regime_30m, bull_origin, bear_origin):
     long_regime_valid = regime_30m in ["BULLISH_DRIFT", "MEAN_REVERTING_RANGE"]
     long_ema_gradient = (v_t > MIN_SLOPE_THRESHOLD) and (a_t >= -0.02) and (curr_c > current_ema21)
     long_microstructure = (curr_l <= (current_ema7 + 0.35)) and (curr_c > current_ema7) and (curr_c > curr_o)
-    
-    # Tail-Risk Elimination (Upper Bound): Prevents buying at top
     long_tail_risk_safe = curr_c < (dt_upper - 1.0)
-    # Institutional Base Proximity (Price bouncing above structural origin)
     long_origin_aligned = curr_c >= bull_origin
 
     if long_regime_valid and long_ema_gradient and long_microstructure and long_tail_risk_safe and long_origin_aligned:
@@ -168,18 +168,14 @@ def evaluate_quant_scalp(df_5m, regime_30m, bull_origin, bear_origin):
             "ema_7": current_ema7,
             "velocity": v_t,
             "acceleration": a_t,
-            "regime": regime_30m,
-            "tail_risk": "SAFE_BELOW_4X_EXTREME"
+            "regime": regime_30m
         }
 
     # 2. SHORT CRITERIA (Respects Institutional Supply Origin + 7-EMA Rejection)
     short_regime_valid = regime_30m in ["BEARISH_DRIFT", "MEAN_REVERTING_RANGE"]
     short_ema_gradient = (v_t < -MIN_SLOPE_THRESHOLD) and (a_t <= 0.02) and (curr_c < current_ema21)
     short_microstructure = (curr_h >= (current_ema7 - 0.35)) and (curr_c < current_ema7) and (curr_c < curr_o)
-    
-    # Reverse Tail-Risk Elimination (Lower Bound): Prevents selling at bottom
     short_tail_risk_safe = curr_c > (dt_lower + 1.0)
-    # Institutional Supply Proximity (Price rejected below structural supply)
     short_origin_aligned = curr_c <= bear_origin
 
     if short_regime_valid and short_ema_gradient and short_microstructure and short_tail_risk_safe and short_origin_aligned:
@@ -189,8 +185,7 @@ def evaluate_quant_scalp(df_5m, regime_30m, bull_origin, bear_origin):
             "ema_7": current_ema7,
             "velocity": v_t,
             "acceleration": a_t,
-            "regime": regime_30m,
-            "tail_risk": "SAFE_ABOVE_4X_BOTTOM"
+            "regime": regime_30m
         }
 
     return {
@@ -296,7 +291,7 @@ def run():
     # 2. HTF Regime & Cost Origin Check
     regime_30m, bull_origin, bear_origin = compute_30m_regime_and_origin(df_30m)
 
-    # 3. 7-EMA Microstructure & Tail-Risk Discrimination
+    # 3. Microstructure Vector Evaluation
     decision = evaluate_quant_scalp(df_5m, regime_30m, bull_origin, bear_origin)
 
     if decision["signal"]:
@@ -335,4 +330,4 @@ def run():
 
 if __name__ == "__main__":
     run()
-                        
+    
