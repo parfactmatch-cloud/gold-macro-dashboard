@@ -60,12 +60,58 @@ def fetch_twelve_data(interval: str = "1h", outputsize: int = 30) -> Optional[pd
         df = pd.DataFrame(res["values"]).rename(columns={"datetime": "time"})
         for col in ["open", "high", "low", "close"]:
             df[col] = pd.to_numeric(df[col], errors="coerce")
-        df["volume"] = pd.to_numeric(df.get("volume", 0), errors="coerce").fillna(0.0)
+            
+        if "volume" in df.columns:
+            df["volume"] = pd.to_numeric(df["volume"], errors="coerce").fillna(0.0)
+        else:
+            df["volume"] = 0.0
+            
         return df.sort_values("time").reset_index(drop=True)
     except Exception:
         return None
 
-# ================= 3. CROSS-ASSET BOND TELEMETRY (LSE ENGINE) =================
+# ================= 3. REAL-TIME SPOT PRICE & ORDER BOOK =================
+def get_live_gold_spot() -> Optional[float]:
+    """
+    Fetches millisecond-level live gold spot via Binance PAXGUSDT order tape.
+    """
+    endpoints = [
+        "https://api.binance.com/api/v3/ticker/price?symbol=PAXGUSDT",
+        "https://data-api.binance.vision/api/v3/ticker/price?symbol=PAXGUSDT"
+    ]
+    for url in endpoints:
+        try:
+            res = requests.get(url, timeout=4).json()
+            if isinstance(res, dict) and 'price' in res:
+                return float(res['price'])
+        except Exception:
+            continue
+    return None
+
+def compute_order_book_skew() -> Tuple[float, float]:
+    """
+    Evaluates institutional book imbalance:
+    Skew = sum(Bids) / sum(Asks) within the top 20 Level-2 depth layers.
+    """
+    endpoints = [
+        "https://api.binance.com/api/v3/depth?symbol=PAXGUSDT&limit=20",
+        "https://data-api.binance.vision/api/v3/depth?symbol=PAXGUSDT&limit=20"
+    ]
+    for url in endpoints:
+        try:
+            res = requests.get(url, timeout=4).json()
+            if isinstance(res, dict) and 'bids' in res and 'asks' in res:
+                total_bids = sum(float(x[1]) for x in res['bids'])
+                total_asks = sum(float(x[1]) for x in res['asks'])
+                if total_asks > 0:
+                    skew_ratio = total_bids / total_asks
+                    alpha = 1.0 if skew_ratio >= DOM_ASYMMETRY_BID_MIN else (-1.0 if skew_ratio <= DOM_ASYMMETRY_ASK_MAX else 0.0)
+                    return alpha, round(skew_ratio, 2)
+        except Exception:
+            continue
+    return 0.0, 1.0
+
+# ================= 4. CROSS-ASSET BOND TELEMETRY (LSE ENGINE) =================
 def evaluate_lse_bond_telemetry() -> Tuple[float, float, float, str]:
     """
     Computes bond yield velocity: v_yield = Y(t) - Y(t-k)
@@ -116,30 +162,6 @@ def evaluate_lse_bond_telemetry() -> Tuple[float, float, float, str]:
             pass
 
     return 0.0, yield_val, yield_delta, impact
-
-# ================= 4. ORDER BOOK SKEW & ABSORPTION MATRIX =================
-def compute_order_book_skew() -> Tuple[float, float]:
-    """
-    Evaluates institutional book imbalance:
-    Skew = sum(Bids) / sum(Asks) within the top 20 Level-2 depth layers.
-    """
-    endpoints = [
-        "https://api.binance.com/api/v3/depth?symbol=PAXGUSDT&limit=20",
-        "https://data-api.binance.vision/api/v3/depth?symbol=PAXGUSDT&limit=20"
-    ]
-    for url in endpoints:
-        try:
-            res = requests.get(url, timeout=4).json()
-            if isinstance(res, dict) and 'bids' in res and 'asks' in res:
-                total_bids = sum(float(x[1]) for x in res['bids'])
-                total_asks = sum(float(x[1]) for x in res['asks'])
-                if total_asks > 0:
-                    skew_ratio = total_bids / total_asks
-                    alpha = 1.0 if skew_ratio >= DOM_ASYMMETRY_BID_MIN else (-1.0 if skew_ratio <= DOM_ASYMMETRY_ASK_MAX else 0.0)
-                    return alpha, round(skew_ratio, 2)
-        except Exception:
-            continue
-    return 0.0, 1.0
 
 # ================= 5. SYSTEMIC MACRO STATE AGGREGATOR =================
 def compute_macro_vector() -> Tuple[float, Dict[str, Any]]:
@@ -312,7 +334,6 @@ def execute_systematic_pipeline():
 
     # Quantitative Decision Gate
     if session_active:
-        # Long Regime Condition
         if composite_alpha >= ALPHA_THRESHOLD_LONG and spot > ema_50_1h and spot > ema_20_1d:
             if confluence_active and conf_type == "BULLISH_EXHAUSTION" and dom_ratio >= DOM_ASYMMETRY_BID_MIN:
                 signal = "BUY"
@@ -321,7 +342,6 @@ def execute_systematic_pipeline():
                 tp = round(max(pdh, spot + (risk_unit * 2.0) + spread_buffer), 2)
                 be = round(spot + risk_unit, 2)
 
-        # Short Regime Condition
         elif composite_alpha <= ALPHA_THRESHOLD_SHORT and spot < ema_50_1h and spot < ema_20_1d:
             if confluence_active and conf_type == "BEARISH_EXHAUSTION" and dom_ratio <= DOM_ASYMMETRY_ASK_MAX:
                 signal = "SELL"
@@ -393,4 +413,4 @@ _System: Institutional Multi-Timeframe Alignment + LSE Yield Dynamics_
 
 if __name__ == "__main__":
     execute_systematic_pipeline()
-        
+    
