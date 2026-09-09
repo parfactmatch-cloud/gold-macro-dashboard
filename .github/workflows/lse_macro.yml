@@ -1,0 +1,35 @@
+name: LSE Macro Intelligence Sync
+
+on:
+  schedule:
+    - cron: '0 * * * *' # हर घंटे एक बार
+  workflow_dispatch:
+
+jobs:
+  sync-macro:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install Dependencies
+        run: pip install pandas requests
+
+      - name: Run LSE Sync
+        env:
+          LSE_API_KEY: ${{ secrets.LSE_API_KEY }}
+        run: python lse_sync.py
+
+      - name: Commit and Push Macro Cache
+        run: |
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "github-actions[bot]@users.noreply.github.com"
+          git add lse_macro.csv || true
+          git commit -m "Auto-sync LSE macro telemetry [skip ci]" || exit 0
+          git push
+          
