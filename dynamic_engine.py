@@ -6,28 +6,38 @@ from datetime import datetime, timezone
 
 SCALP_LOG_FILE = "scalp_log.csv"
 
+def get_structural_liquidity_levels(df_5m, lookback=20):
+    """
+    Extracts structural liquidity pools (swing highs and lows) from historical bars.
+    """
+    recent_bars = df_5m.iloc[-lookback:-1]
+    liquidity_ceiling = float(recent_bars["high"].max())  # Buy-side Liquidity (Resistance)
+    liquidity_floor = float(recent_bars["low"].min())     # Sell-side Liquidity (Support)
+    return liquidity_ceiling, liquidity_floor
+
 def evaluate_dynamic_scalp(df_5m, spot_price, us10y_vector):
     """
     100% Dynamic Quant Engine:
-    - Zero hardcoded prices.
-    - Adapts to any price range via relative ATR and Rolling Volatility.
-    - Yield-driven directional gating.
+    - Adapts dynamically to ATR volatility without hardcoded prices.
+    - Resolves targets via Structural Liquidity Zones instead of arbitrary fixed multiples.
+    - Yield-driven directional gating and structural R:R enforcement (minimum 1:1.3).
     """
     if len(df_5m) < 30:
         return
 
-    # 1. डेटा स्ट्रक्चर और रनटाइम बार सिंक्रोनाइज़ेशन
+    # 1. Bar synchronization
     df = df_5m.copy()
     df.loc[df.index[-1], "close"] = spot_price
 
-    # 2. डायनेमिक इंडिकेटर मैट्रिक्स
+    # 2. Dynamic indicator matrix
     ema_fast = df["close"].ewm(span=7, adjust=False).mean()
     ema_slow = df["close"].ewm(span=21, adjust=False).mean()
     
     curr_ema_fast = float(ema_fast.iloc[-1])
     curr_ema_slow = float(ema_slow.iloc[-1])
-    
-    # 3. डायनेमिक वोलैटिलिटी (14-पीरियड ATR)
+    velocity = float(ema_fast.diff().iloc[-1])
+
+    # 3. Dynamic volatility (14-period ATR)
     tr = pd.concat([
         df['high'] - df['low'],
         (df['high'] - df['close'].shift(1)).abs(),
@@ -36,7 +46,7 @@ def evaluate_dynamic_scalp(df_5m, spot_price, us10y_vector):
     atr = float(tr.rolling(14).mean().iloc[-1])
     atr = atr if not np.isnan(atr) and atr > 0 else 2.50
 
-    # 4. रिलेटिव कैंडल डायनेमिक्स (कोई फिक्स डॉलर नहीं, सिर्फ रेश्यो)
+    # 4. Relative bar geometry
     curr_o = float(df["open"].iloc[-1])
     curr_h = float(df["high"].iloc[-1])
     curr_l = float(df["low"].iloc[-1])
@@ -45,47 +55,63 @@ def evaluate_dynamic_scalp(df_5m, spot_price, us10y_vector):
     upper_wick = curr_h - max(spot_price, curr_o)
     lower_wick = min(spot_price, curr_o) - curr_l
 
-    # संतुलन स्तर (Equilibrium) से विचलन दूरी (ATR मल्टीपल में)
+    # Normalized deviation from 21-EMA equilibrium
     deviation = (spot_price - curr_ema_slow) / atr
 
-    # पिछले 10 कैंडल्स का लिक्विडिटी बेस और रूफ
+    # Structural liquidity boundary resolution
+    liq_ceiling, liq_floor = get_structural_liquidity_levels(df, lookback=15)
+    spread_buffer = atr * 0.15
+
+    # =========================================================================
+    # SETUP A: VOLATILITY EXHAUSTION SPIKE FADE (SHORT)
+    # =========================================================================
+    if deviation > 1.50 and upper_wick > (body * 1.2) and us10y_vector == "BEARISH_PRESSURE":
+        sl = round(curr_h + spread_buffer, 2)
+        tp = round(curr_ema_slow, 2)  # Reversion to equilibrium
+        risk = sl - spot_price
+        reward = spot_price - tp
+        rr = reward / risk if risk > 0 else 0
+        
+        if rr >= 1.30:
+            dispatch_execution("SHORT", spot_price, sl, tp, "VOLATILITY_EXHAUSTION_FADE")
+            return
+        else:
+            print(f"[REJECTED] SHORT skipped: R:R {rr:.2f} below 1.3 threshold.")
+
+    # =========================================================================
+    # SETUP B: INSTITUTIONAL LIQUIDITY SWEEP (BUY)
+    # =========================================================================
     rolling_low = float(df["low"].iloc[-11:-1].min())
-    rolling_high = float(df["high"].iloc[-11:-1].max())
-
-    # =========================================================================
-    # सेटअप A: वोलैटिलिटी एग्जॉशन शॉर्ट (हर रेंज में काम करेगा)
-    # =========================================================================
-    # शर्त: प्राइस 21-EMA से 1.5x ATR से ज्यादा खिंच चुका है + रिजेक्शन विक + यील्ड बुलिश है
-    if deviation > 1.5 and upper_wick > (body * 1.2) and us10y_vector == "BEARISH_PRESSURE":
-        sl = round(curr_h + (atr * 0.25), 2)  # डायनेमिक SL स्पाइक के थोड़ा ऊपर
-        tp = round(curr_ema_slow, 2)         # हमेशा 21-EMA पर रिवर्जन टारगेट
-        dispatch_execution("SHORT", spot_price, sl, tp, "VOLATILITY_EXHAUSTION_FADE")
-        return
-
-    # =========================================================================
-    # सेटअप B: संस्थागत लिक्विडिटी हंट लॉन्ग (हर रेंज में काम करेगा)
-    # =========================================================================
-    # शर्त: पिछले बेस के नीचे डुबकी मारी लेकिन तुरंत वापस ऊपर क्लोज हुआ + यील्ड बाधक नहीं है
     liquidity_trapped = (curr_l < rolling_low) and (spot_price > rolling_low) and (lower_wick > body * 1.2)
     
     if liquidity_trapped and us10y_vector != "BEARISH_PRESSURE":
-        sl = round(curr_l - (atr * 0.25), 2)  # विक के नीचे डायनेमिक SL
+        sl = round(curr_l - spread_buffer, 2)
+        tp = round(liq_ceiling - spread_buffer, 2)  # Targets nearest buy-side liquidity ceiling
         risk = spot_price - sl
-        tp = round(spot_price + (risk * 2.0), 2) # असिमेट्रिक 1:2 R:R
-        dispatch_execution("BUY", spot_price, sl, tp, "LIQUIDITY_ABSORPTION_SWEEP")
-        return
+        reward = tp - spot_price
+        rr = reward / risk if risk > 0 else 0
+
+        if rr >= 1.30:
+            dispatch_execution("BUY", spot_price, sl, tp, "LIQUIDITY_ABSORPTION_SWEEP")
+            return
+        else:
+            print(f"[REJECTED] SWEEP BUY skipped: Ceiling at ${tp} limits R:R to {rr:.2f}.")
 
     # =========================================================================
-    # सेटअप C: ट्रेंड कंटिन्युएशन पुलबैक (एंटी-चेज़िंग गार्ड)
+    # SETUP C: EQUILIBRIUM PULLBACK RE-TEST (BUY)
     # =========================================================================
-    # शर्त: संतुलन के करीब (0.8x ATR से कम दूरी) + ट्रेंड की दिशा में रीबाउंड
-    if abs(deviation) < 0.8:
-        # बुलिश रीटेस्ट
+    if abs(deviation) < 0.80 and velocity > 0.04:
         if spot_price > curr_ema_slow and curr_l <= curr_ema_fast and spot_price > curr_o and us10y_vector != "BEARISH_PRESSURE":
-            sl = round(curr_ema_slow - (atr * 0.50), 2)
+            sl = round(curr_ema_slow - (atr * 0.40), 2)
+            tp = round(liq_ceiling - spread_buffer, 2)  # Dynamic target at structural resistance
             risk = spot_price - sl
-            tp = round(spot_price + (risk * 2.0), 2)
-            dispatch_execution("BUY", spot_price, sl, tp, "TREND_EQUILIBRIUM_PULLBACK")
+            reward = tp - spot_price
+            rr = reward / risk if risk > 0 else 0
+
+            if rr >= 1.30:
+                dispatch_execution("BUY", spot_price, sl, tp, "TREND_EQUILIBRIUM_PULLBACK")
+            else:
+                print(f"[REJECTED] PULLBACK BUY skipped: Ceiling at ${tp} chokes R:R ({rr:.2f} < 1.30).")
 
 
 def dispatch_execution(side, spot, sl, tp, regime_tag):
@@ -110,12 +136,12 @@ def dispatch_execution(side, spot, sl, tp, regime_tag):
         f"💵 *Dynamic Spot*: `${spot:.2f}`\n"
         f"📐 *Risk Profile*: `SL Risk: ${risk:.2f} | Target Reward: ${reward:.2f} (1:{rr})`\n"
         f"━━━━━━━━━━━━━━━━━━━━━━━\n"
-        f"🛑 *Dynamic SL*: `${sl:.2f}`\n"
-        f"🎯 *Dynamic Target*: `${tp:.2f}`\n"
+        f"🛑 *Structural SL*: `${sl:.2f}`\n"
+        f"🎯 *Liquidity Target*: `${tp:.2f}`\n"
         f"⏰ *Epoch*: `{now_utc}`"
     )
     send_telegram_msg(card)
-    print(f"[{regime_tag}] {side} @ {spot} | SL: {sl} | TP: {tp}")
+    print(f"[{regime_tag}] {side} @ {spot} | SL: {sl} | TP: {tp} | R:R: 1:{rr}")
 
     trade_entry = pd.DataFrame([{
         "timestamp": now_utc, "action": side, "price": spot,
@@ -135,4 +161,4 @@ def send_telegram_msg(message: str):
             )
         except Exception as e:
             print(f"[TG ERROR] {e}")
-  
+    
