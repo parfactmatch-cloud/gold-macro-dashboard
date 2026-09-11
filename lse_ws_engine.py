@@ -1,13 +1,13 @@
 """
 ===============================================================================
-PROJECT: LSE REAL-TIME WEBSOCKET SCALPING ENGINE (XAU/USD)
-STREAM: wss://data-ws.londonstrategicedge.com
-LATENCY: SUB-SECOND REAL-TIME TICK EXECUTION
+PROJECT: LSE ULTRA-LOW LATENCY REAL-TIME SCALPING ENGINE (XAU/USD)
+ARCHITECTURE: Zero Disk-I/O Latency | Non-Blocking Async Alerts | 100% Dynamic Quant
 ===============================================================================
 """
 
 import os
 import time
+import threading
 import requests
 import pandas as pd
 import numpy as np
@@ -20,116 +20,173 @@ TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN", "").strip()
 TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID", "").strip()
 
 SCALP_LOG_FILE = "scalp_log.csv"
-EMA_FAST = 7
-EMA_SLOW = 21
-
-# In-memory candle aggregator
-current_candle = None
-candle_history = []
 CANDLE_INTERVAL_SEC = 300  # 5 Minutes
 
-def dispatch_telegram(text: str):
-    if TELEGRAM_BOT_TOKEN and TELEGRAM_CHAT_ID:
-        try:
-            requests.post(
-                f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage",
-                json={"chat_id": TELEGRAM_CHAT_ID, "text": text, "parse_mode": "Markdown"},
-                timeout=5
-            )
-        except Exception as e:
-            print(f"[TG ERROR] {e}")
+# Global State
+candle_history = []
+current_candle = None
+has_open_trade = False  # In-memory Concurrency Lock
 
-def evaluate_instant_scalp(df_5m, spot_price):
-    if len(df_5m) < 25:
+# ================= NON-BLOCKING TELEGRAM =================
+def async_telegram(text: str):
+    """Dispatches Telegram notifications in a daemon thread to prevent WS loop stutter."""
+    def _worker():
+        if TELEGRAM_BOT_TOKEN and TELEGRAM_CHAT_ID:
+            try:
+                requests.post(
+                    f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage",
+                    json={"chat_id": TELEGRAM_CHAT_ID, "text": text, "parse_mode": "Markdown"},
+                    timeout=5
+                )
+            except Exception as e:
+                print(f"[TG ERROR] {e}")
+    threading.Thread(target=_worker, daemon=True).start()
+
+# ================= COLD-START HISTORY SEEDER =================
+def bootstrap_history(client):
+    """Pre-populates 5M history via REST so the engine evaluates immediately on first tick."""
+    global candle_history
+    print("[SYSTEM] Fetching 35 historical 5M bars for instant warm start...")
+    try:
+        bars = client.get_bars("XAU/USD", timeframe="5m", limit=35)
+        for b in bars:
+            candle_history.append({
+                "time": int(b.timestamp),
+                "open": float(b.open),
+                "high": float(b.high),
+                "low": float(b.low),
+                "close": float(b.close)
+            })
+        print(f"[SYSTEM] Warm start complete: {len(candle_history)} bars buffered.")
+    except Exception as e:
+        print(f"[WARN] Failed to preload history ({e}). Will buffer live ticks.")
+
+# ================= DYNAMIC QUANT KERNEL =================
+def evaluate_dynamic_scalp(df_5m: pd.DataFrame, spot_price: float, macro_vector: str = "BEARISH_PRESSURE"):
+    global has_open_trade
+    if has_open_trade or len(df_5m) < 25:
         return
 
-    close_s = df_5m["close"].copy()
-    close_s.iloc[-1] = spot_price  # Inject current live tick into current bar close
+    # 1. Real-time Series Injection
+    close_series = df_5m["close"].copy()
+    close_series.iloc[-1] = spot_price
 
-    ema_7 = close_s.ewm(span=EMA_FAST, adjust=False).mean()
-    ema_21 = close_s.ewm(span=EMA_SLOW, adjust=False).mean()
-    velocity = ema_7.diff().iloc[-1]
+    # 2. Dynamic Moving Averages
+    ema_fast = close_series.ewm(span=7, adjust=False).mean()
+    ema_slow = close_series.ewm(span=21, adjust=False).mean()
+    curr_ema_fast = float(ema_fast.iloc[-1])
+    curr_ema_slow = float(ema_slow.iloc[-1])
+    velocity = float(ema_fast.diff().iloc[-1])
 
-    curr_ema7 = ema_7.iloc[-1]
-    curr_ema21 = ema_21.iloc[-1]
-    curr_l = df_5m["low"].iloc[-1]
-    curr_o = df_5m["open"].iloc[-1]
-
-    # Calculate dynamic 14 ATR
+    # 3. Dynamic Volatility (14 ATR)
     tr = pd.concat([
         df_5m['high'] - df_5m['low'],
-        (df_5m['high'] - close_s.shift(1)).abs(),
-        (df_5m['low'] - close_s.shift(1)).abs()
+        (df_5m['high'] - close_series.shift(1)).abs(),
+        (df_5m['low'] - close_series.shift(1)).abs()
     ], axis=1).max(axis=1)
     atr = float(tr.rolling(14).mean().iloc[-1])
     atr = atr if not np.isnan(atr) and atr > 0 else 2.50
 
-    # 1. Instant Long Trigger on 7-EMA Rebound
-    if velocity > 0.04 and spot_price > curr_ema21:
-        if curr_l <= (curr_ema7 + 0.35) and spot_price > curr_ema7 and spot_price > curr_o:
-            trigger_order("BUY", spot_price, curr_ema7, atr, velocity)
+    # 4. Bar Geometry & Relative Deviation
+    curr_o = float(df_5m["open"].iloc[-1])
+    curr_h = float(df_5m["high"].iloc[-1])
+    curr_l = float(df_5m["low"].iloc[-1])
 
-    # 2. Instant Short Trigger on 7-EMA Rejection
-    elif velocity < -0.04 and spot_price < curr_ema21:
-        curr_h = df_5m["high"].iloc[-1]
-        if curr_h >= (curr_ema7 - 0.35) and spot_price < curr_ema7 and spot_price < curr_o:
-            trigger_order("SELL", spot_price, curr_ema7, atr, velocity)
+    body = abs(spot_price - curr_o)
+    upper_wick = curr_h - max(spot_price, curr_o)
+    lower_wick = min(spot_price, curr_o) - curr_l
 
-def trigger_order(side, spot, ema7, atr, vel):
-    # Concurrency Lock: Check if already open
-    if os.path.exists(SCALP_LOG_FILE):
-        try:
-            df_log = pd.read_csv(SCALP_LOG_FILE)
-            if not df_log.empty and (df_log["status"] == "OPEN").any():
-                return
-        except Exception:
-            pass
+    # Deviation from Equilibrium (Normalized by ATR)
+    deviation = (spot_price - curr_ema_slow) / atr
 
-    risk = round(atr * 1.5, 2)
-    sl = round(spot - risk, 2) if side == "BUY" else round(spot + risk, 2)
-    tp = round(spot + (risk * 2.0), 2) if side == "BUY" else round(spot - (risk * 2.0), 2)
+    # Structural Range (Past 10 Closed Bars)
+    rolling_low = float(df_5m["low"].iloc[-11:-1].min())
+    rolling_high = float(df_5m["high"].iloc[-11:-1].max())
+
+    # ------------------ STRATEGY 1: EXHAUSTION SPIKE FADE (SHORT) ------------------
+    # Trigger: Price overextended (>1.5x ATR) + Rejection Upper Wick + Bearish Macro Pressure
+    if deviation > 1.50 and upper_wick > (body * 1.1) and macro_vector == "BEARISH_PRESSURE":
+        sl = round(curr_h + (atr * 0.20), 2)
+        tp = round(curr_ema_slow, 2)  # Return to Mean Target
+        execute_trade("SHORT", spot_price, sl, tp, "VOLATILITY_EXHAUSTION_FADE", atr)
+        return
+
+    # ------------------ STRATEGY 2: LIQUIDITY SWEEP SNIPER (BUY) ------------------
+    # Trigger: False breakdown of rolling base + Absorbed wick + Macro is not hostile
+    is_sweep_absorbed = (curr_l < rolling_low) and (spot_price > rolling_low) and (lower_wick > body * 1.2)
+    if is_sweep_absorbed and macro_vector != "BEARISH_PRESSURE":
+        sl = round(curr_l - (atr * 0.20), 2)
+        risk = spot_price - sl
+        tp = round(spot_price + (risk * 2.0), 2)
+        execute_trade("BUY", spot_price, sl, tp, "LIQUIDITY_ABSORPTION_SWEEP", atr)
+        return
+
+    # ------------------ STRATEGY 3: STRUCTURAL PULLBACK BUY ------------------
+    # Anti-FOMO Guard: Must be close to equilibrium (|deviation| <= 0.8)
+    if abs(deviation) <= 0.80 and velocity > 0.04 and spot_price > curr_ema_slow:
+        if curr_l <= (curr_ema_fast + 0.35) and spot_price > curr_ema_fast and spot_price >= curr_o:
+            if macro_vector != "BEARISH_PRESSURE":
+                sl = round(curr_ema_slow - (atr * 0.40), 2)
+                risk = spot_price - sl
+                tp = round(spot_price + (risk * 2.0), 2)
+                execute_trade("BUY", spot_price, sl, tp, "EQUILIBRIUM_PULLBACK", atr)
+
+# ================= EXECUTION & PERSISTENCE =================
+def execute_trade(side: str, spot: float, sl: float, tp: float, setup_type: str, atr: float):
+    global has_open_trade
+    has_open_trade = True  # Instant memory lock
+
+    risk = abs(spot - sl)
+    reward = abs(tp - spot)
+    rr = round(reward / risk, 2) if risk > 0 else 0
     utc_str = datetime.now(timezone.utc).strftime("%H:%M:%S UTC")
 
-    icon = "⚡🟢 *WEBSOCKET LIVE BUY*" if side == "BUY" else "⚡🔴 *WEBSOCKET LIVE SELL*"
+    icon = "⚡🟢 *DYNAMIC BUY TRIGGER*" if side == "BUY" else "⚡🔴 *DYNAMIC FADE SHORT*"
     card = (
         f"{icon}\n"
         f"━━━━━━━━━━━━━━━━━━━━━━━\n"
-        f"⚡ *Latency*: `Zero Latency (Tick Stream)`\n"
-        f"💵 *Spot Trigger*: `${spot:.2f}`\n"
-        f"📐 *EMA-7 Velocity*: `v={vel:+.2f}`\n"
-        f"📊 *5M Volatility (ATR)*: `${atr:.2f}`\n"
+        f"🎯 *Engine Setup*: `{setup_type}`\n"
+        f"💵 *Execution Spot*: `${spot:.2f}`\n"
+        f"📐 *5M Volatility (ATR)*: `${atr:.2f}`\n"
+        f"⚖️ *Risk Envelope*: `Risk: ${risk:.2f} | R:R: 1:{rr}`\n"
         f"━━━━━━━━━━━━━━━━━━━━━━━\n"
         f"🛑 *Dynamic SL*: `${sl:.2f}`\n"
-        f"🎯 *Quant Target (2R)*: `${tp:.2f}`\n"
+        f"🎯 *Quant Target*: `${tp:.2f}`\n"
         f"⏰ *Epoch*: `{utc_str}`"
     )
-    dispatch_telegram(card)
-    print(f"[TRIGGER] {side} at ${spot:.2f}")
+    async_telegram(card)
+    print(f"[{setup_type}] {side} @ ${spot:.2f} | SL: ${sl:.2f} | TP: ${tp:.2f}")
 
-    # Save state
-    new_trade = pd.DataFrame([{
-        "timestamp": utc_str, "action": f"SCALP_{side}", "price": spot,
-        "ema_7": ema7, "sl": sl, "tp": tp, "atr": atr, "status": "OPEN", "be_alerted": "False"
-    }])
-    new_trade.to_csv(SCALP_LOG_FILE, mode="a", header=not os.path.exists(SCALP_LOG_FILE), index=False)
+    # Async disk append
+    def _disk_writer():
+        trade_entry = pd.DataFrame([{
+            "timestamp": utc_str, "action": f"SCALP_{side}", "price": spot,
+            "sl": sl, "tp": tp, "atr": atr, "status": "OPEN", "setup": setup_type
+        }])
+        trade_entry.to_csv(SCALP_LOG_FILE, mode="a", header=not os.path.exists(SCALP_LOG_FILE), index=False)
+    threading.Thread(target=_disk_writer, daemon=True).start()
 
+# ================= REAL-TIME STREAMING WORKER =================
 def start_lse_stream():
     if not LSE_API_KEY:
-        print("[ERROR] LSE_API_KEY is not set.")
+        print("[CRITICAL] LSE_API_KEY environment variable is not defined.")
         return
 
-    print(f"[SYSTEM] Initializing LSE WebSocket Stream for XAU/USD...")
     client = LSE(api_key=LSE_API_KEY)
+    bootstrap_history(client)
 
     global current_candle, candle_history
 
-    # Subscribe to live streaming ticks
-    for tick in client.stream("XAU/USD"):  # Uses wss://data-ws.londonstrategicedge.com
+    print(f"[SYSTEM] Connecting to LSE WebSocket Feed (wss://data-ws.londonstrategicedge.com)...")
+    
+    # Tick-Level Streaming Loop
+    for tick in client.stream("XAU/USD"):
         try:
             price = float(tick.price)
             now = time.time()
-            candle_start = now - (now % CANDLE_INTERVAL_SEC)
+            candle_start = int(now - (now % CANDLE_INTERVAL_SEC))
 
+            # New 5M Bar Shift
             if current_candle is None or current_candle["time"] != candle_start:
                 if current_candle is not None:
                     candle_history.append(current_candle)
@@ -141,18 +198,21 @@ def start_lse_stream():
                     "open": price, "high": price, "low": price, "close": price
                 }
             else:
-                current_candle["high"] = max(current_candle["high"], price)
-                current_candle["low"] = min(current_candle["low"], price)
+                # Intra-bar Dynamic Updates
+                if price > current_candle["high"]:
+                    current_candle["high"] = price
+                elif price < current_candle["low"]:
+                    current_candle["low"] = price
                 current_candle["close"] = price
 
-            # Real-time evaluation on every tick
-            if len(candle_history) >= 20:
+            # Real-time Evaluation on every streaming tick
+            if len(candle_history) >= 25:
                 df = pd.DataFrame(candle_history + [current_candle])
-                evaluate_instant_scalp(df, price)
+                evaluate_dynamic_scalp(df, price, macro_vector="BEARISH_PRESSURE")
 
         except Exception as e:
-            print(f"[STREAM ERROR] {e}")
+            print(f"[TICK ERROR] {e}")
 
 if __name__ == "__main__":
     start_lse_stream()
-  
+            
