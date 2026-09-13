@@ -1,10 +1,10 @@
 """
-LSE Isolated Macro & Options GEX Sync Engine
+LSE Isolated Macro & Options GEX/DEX Sync Engine
 - Fetches US10Y Bond Yields from London Strategic Edge API -> saves to 'lse_macro.csv'
-- Computes SPDR Gold Shares (GLD) dealer Gamma Walls & Flip -> saves to 'gex_levels.json'
+- Computes SPDR Gold Shares (GLD) dealer Gamma Walls, Net DEX & Blast Squeeze -> saves to 'gex_levels.json'
 - Multi-Source Spot Feed: CME Futures (GC=F) -> Stooq XAUUSD -> Binance PAXGUSDT -> GLD NAV
 - Regime-agnostic: Directly supports CME GC1! $4,400+ pricing without static baseline truncations
-- Periodic Radar Telemetry: Automatically broadcasts institutional corridors to Telegram
+- Periodic Radar Telemetry: Dispatches live DEX tilt & Gamma Blast squeeze status to Telegram
 """
 
 import os
@@ -12,7 +12,7 @@ import requests
 import pandas as pd
 from datetime import datetime, timezone
 
-# GEX Engine Import (free_gex_engine.py must reside in the same execution path)
+# GEX & DEX Engine Import (free_gex_engine.py must reside in the same execution path)
 from free_gex_engine import GoldGEXEngine
 
 # Telegram Engine Broadcast Import
@@ -128,6 +128,8 @@ def sync_gex(spot_price: float):
             f"[GEX SUCCESS] Call Wall: {gex_data.get('call_wall_xau')} | "
             f"Put Wall: {gex_data.get('put_wall_xau')} | "
             f"Flip: {gex_data.get('gamma_flip_xau')} | "
+            f"Net DEX: {gex_data.get('net_dex_m'):+.1f}M | "
+            f"Blast Active: {gex_data.get('gamma_blast_active')} | "
             f"Status: {gex_data.get('status')}"
         )
         return gex_data
@@ -163,11 +165,11 @@ def run_sync():
     else:
         print("[LSE SYNC WARN] Macro yield series skipped or failed. Retaining prior lse_macro.csv state.")
 
-    # 2. Options Gamma Exposure (GEX) Calculation
+    # 2. Options Gamma & Delta Exposure (GEX/DEX) Calculation
     spot_xau = fetch_live_gold_spot()
     gex_data = sync_gex(spot_price=spot_xau)
 
-    # 3. Periodic Market Radar Telemetry Dispatch
+    # 3. Periodic Market Radar Telemetry Dispatch with Net DEX & Squeeze Status
     if broadcast_market_pulse and gex_data and gex_data.get("status") in ["HEALTHY", "FALLBACK_DEGRADED"]:
         try:
             broadcast_market_pulse(
@@ -177,7 +179,9 @@ def run_sync():
                 gamma_flip=float(gex_data.get("gamma_flip_xau", 0.0)),
                 regime=str(gex_data.get("net_gamma_regime", "UNKNOWN")),
                 us10y_yield=latest_val,
-                us10y_impact=gold_macro_impact
+                us10y_impact=gold_macro_impact,
+                net_dex=float(gex_data.get("net_dex_m", 0.0)),
+                blast_active=bool(gex_data.get("gamma_blast_active", False))
             )
             print("[PULSE SUCCESS] Institutional Market Radar Pulse broadcasted to Telegram.")
         except Exception as e:
@@ -185,4 +189,4 @@ def run_sync():
 
 if __name__ == "__main__":
     run_sync()
-    
+                
