@@ -1,3 +1,5 @@
+import os
+import json
 import streamlit as st
 import yfinance as yf
 from fredapi import Fred
@@ -5,12 +7,14 @@ import plotly.graph_objects as go
 import pandas as pd
 import numpy as np
 import requests
+from datetime import datetime, timezone
 
 # Page Setup
-st.set_page_config(page_title="Gold Institutional Macro Engine", page_icon="🪙", layout="wide")
+st.set_page_config(page_title="Gold Institutional Macro & GEX Engine", page_icon="🪙", layout="wide")
 
-FRED_API_KEY = "73f33ecb948906c7197f3e0a042e5e3f"  # अपनी 32-अक्षर की असली FRED API Key यहाँ रखें
+FRED_API_KEY = "73f33ecb948906c7197f3e0a042e5e3f"
 fred = Fred(api_key=FRED_API_KEY)
+GEX_CACHE_FILE = "gex_levels.json"
 
 # ----------------- DATA FETCHING -----------------
 @st.cache_data(ttl=1800)
@@ -61,6 +65,100 @@ def fetch_cot_data():
     except:
         return 0, 0, False
 
+def load_gex_telemetry():
+    """Reads cached institutional options GEX barriers."""
+    if os.path.exists(GEX_CACHE_FILE):
+        try:
+            with open(GEX_CACHE_FILE, "r") as f:
+                return json.load(f)
+        except Exception:
+            pass
+    return None
+
+def render_gex_dashboard_section(current_spot: float):
+    st.subheader("🛡️ Institutional Options Gamma Exposure (GEX)")
+
+    gex_data = load_gex_telemetry()
+    if not gex_data or gex_data.get("status") == "FAILED":
+        st.warning("⚠️ Institutional Options GEX cache is syncing or unavailable.")
+        return
+
+    call_wall = float(gex_data.get("call_wall_xau", 0.0))
+    put_wall = float(gex_data.get("put_wall_xau", 0.0))
+    flip_point = float(gex_data.get("gamma_flip_xau", 0.0))
+    regime = gex_data.get("net_gamma_regime", "UNKNOWN")
+    sync_time = gex_data.get("timestamp_utc", "N/A")
+
+    # 1. Metric Indicators Ribbon
+    col1, col2, col3, col4 = st.columns(4)
+    with col1:
+        st.metric("Institutional Call Wall (Ceiling)", f"${call_wall:.2f}", delta=f"{call_wall - current_spot:+.2f} USD")
+    with col2:
+        st.metric("Institutional Put Wall (Floor)", f"${put_wall:.2f}", delta=f"{current_spot - put_wall:+.2f} USD")
+    with col3:
+        st.metric("Gamma Neutral Flip", f"${flip_point:.2f}")
+    with col4:
+        regime_icon = "🟢" if "LONG_GAMMA" in regime else "🔴"
+        st.metric("Dealer Regime", f"{regime_icon} {regime.split('_')[0]}")
+
+    st.caption(f"Last Options Sweep: `{sync_time}` | Fee-Adjusted GLD Ratio: `{gex_data.get('conv_ratio', 'N/A')}`")
+
+    # 2. Interactive Structural Plotly Chart
+    fig = go.Figure()
+    y_min = min(put_wall - 15, current_spot - 20)
+    y_max = max(call_wall + 15, current_spot + 20)
+
+    # Put Wall Band
+    fig.add_hrect(
+        y0=put_wall - 3.0, y1=put_wall,
+        fillcolor="rgba(0, 230, 118, 0.15)", line_width=1, line_color="#00E676",
+        annotation_text="Institutional Put Wall (Support Floor)", annotation_position="bottom right"
+    )
+
+    # Call Wall Band
+    fig.add_hrect(
+        y0=call_wall, y1=call_wall + 3.0,
+        fillcolor="rgba(255, 23, 68, 0.15)", line_width=1, line_color="#FF1744",
+        annotation_text="Institutional Call Wall (Resistance Ceiling)", annotation_position="top right"
+    )
+
+    # Flip Line
+    fig.add_hline(
+        y=flip_point, line_dash="dash", line_color="#FFD700",
+        annotation_text="Gamma Neutral Flip Line", annotation_position="top left"
+    )
+
+    # Live Spot Point Marker
+    fig.add_trace(go.Scatter(
+        x=[datetime.now(timezone.utc).strftime("%H:%M:%S UTC")],
+        y=[current_spot],
+        mode="markers+text",
+        marker=dict(size=14, color="#00FFFF", symbol="diamond"),
+        name="Spot Gold",
+        text=[f"${current_spot:.2f}"],
+        textposition="top center"
+    ))
+
+    fig.update_layout(
+        title="Dealer Gamma Corridors vs Live Price Action",
+        yaxis=dict(title="XAU/USD (USD)", range=[y_min, y_max]),
+        height=320,
+        margin=dict(l=20, r=20, t=35, b=20),
+        template="plotly_dark"
+    )
+    st.plotly_chart(fig, use_container_width=True, config={'displayModeBar': False})
+
+    # 3. Dynamic Execution Guardrail Status
+    dist_call = call_wall - current_spot
+    dist_put = current_spot - put_wall
+
+    if 0 <= dist_call <= 3.0:
+        st.error(f"🛑 **LONG GATEKEEPER ACTIVE**: Spot is within ${dist_call:.2f} of the Dealer Call Wall. Breakout upside is capped.")
+    elif 0 <= dist_put <= 3.0:
+        st.error(f"🛑 **SHORT GATEKEEPER ACTIVE**: Spot is within ${dist_put:.2f} of the Dealer Put Wall. Downward expansion blocked by dealer inventory absorption.")
+    else:
+        st.success("✅ **GEX CLEARANCE**: Spot is navigating open volatility corridors. Algorithmic setups unblocked.")
+
 try:
     real_yield, yield_curve, net_liq, combined, rolling_corr = fetch_macro_and_market()
     cot_net, cot_delta, cot_success = fetch_cot_data()
@@ -81,6 +179,7 @@ try:
 
     cu_au_ratio = (combined['HG'].iloc[-1] / combined['GC'].iloc[-1])
     au_ag_ratio = (combined['GC'].iloc[-1] / combined['SI'].iloc[-1])
+    live_gold_spot = float(combined['GC'].iloc[-1])
 
     # ----------------- SCORING ENGINE -----------------
     score = 0
@@ -98,7 +197,7 @@ try:
 
     # ----------------- UI: MASTER BIAS -----------------
     st.title("🪙 XAU/USD Institutional Macro Engine")
-    st.caption("Pure Rule-Based Fundamental Bias | Central Bank & Quantitative Metrics")
+    st.caption("Pure Rule-Based Fundamental Bias | Central Bank & Options Quantitative Metrics")
 
     if score >= 4:
         st.success(f"### 🟢 OVERALL MACRO BIAS: STRONG LONG (Score: +{score}/8)")
@@ -111,6 +210,10 @@ try:
         mandate = "No clear macro directional edge. Play key support/resistance ranges or reduce size."
 
     st.info(f"**Execution Mandate:** {mandate}")
+    st.markdown("---")
+
+    # ----------------- SECTION 0: INSTITUTIONAL GEX MATRIX -----------------
+    render_gex_dashboard_section(current_spot=live_gold_spot)
     st.markdown("---")
 
     # ----------------- SECTION 1: INSTITUTIONAL & DXY CORRELATION -----------------
