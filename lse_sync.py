@@ -2,7 +2,8 @@
 LSE Isolated Macro & Options GEX Sync Engine
 - Fetches US10Y Bond Yields from London Strategic Edge API -> saves to 'lse_macro.csv'
 - Computes SPDR Gold Shares (GLD) dealer Gamma Walls & Flip -> saves to 'gex_levels.json'
-- Hybrid Spot Feed: Primary Binance PAXGUSDT -> Failover Stooq XAUUSD (Zero delisted/IP block warnings)
+- Multi-Source Spot Feed: CME Futures (GC=F) -> Stooq XAUUSD -> Binance PAXGUSDT -> GLD NAV
+- Regime-agnostic: Directly supports CME GC1! $4,400+ pricing without static baseline truncations
 """
 
 import os
@@ -44,12 +45,42 @@ def fetch_lse_series(symbol="US10Y", limit=10):
 
 def fetch_live_gold_spot() -> float:
     """
-    Hybrid Spot Resolution:
-    1. Primary: Binance PAXGUSDT (24/7 liquid gold proxy, cloud-safe, sub-second)
-    2. Failover: Stooq Spot Gold XAUUSD (Traditional institutional quote, zero auth)
-    3. Baseline Anchor Fallback
+    Regime-agnostic Spot & Futures Gold resolution.
+    Directly aligns with CME GC1! ($4,400+ regime) and Spot XAU/USD.
     """
-    # 1. Primary: Binance Order Tape
+    # 1. Primary: CME Continuous Gold Futures (GC=F) with Browser Session & 7-day Buffer
+    try:
+        import yfinance as yf
+        session = requests.Session()
+        session.headers.update({
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/122.0.0.0 Safari/537.36"
+        })
+        ticker = yf.Ticker("GC=F", session=session)
+        hist = ticker.history(period="7d")
+        if not hist.empty:
+            price = float(hist["Close"].dropna().iloc[-1])
+            if price > 1500.0:
+                print(f"[SPOT SUCCESS] Sourced via CME Futures (GC=F): ${price:.2f}")
+                return price
+    except Exception as e:
+        print(f"[SPOT CME SKIP] {e}")
+
+    # 2. Secondary: Stooq Institutional Spot Gold (XAUUSD)
+    try:
+        stooq_url = "https://stooq.com/q/l/?s=xauusd&f=sd2t2ohlcv&h&e=csv"
+        res = requests.get(stooq_url, headers={"User-Agent": "Mozilla/5.0"}, timeout=5)
+        if res.status_code == 200:
+            lines = res.text.strip().split("\n")
+            if len(lines) >= 2:
+                cols = lines[1].split(",")
+                close_val = float(cols[6])
+                if close_val > 1500.0:
+                    print(f"[SPOT SUCCESS] Sourced via Stooq XAUUSD: ${close_val:.2f}")
+                    return close_val
+    except Exception as e:
+        print(f"[SPOT STOOQ SKIP] {e}")
+
+    # 3. Tertiary: Binance PAXGUSDT (24/7 continuous order tape)
     endpoints = [
         "https://api.binance.com/api/v3/ticker/price?symbol=PAXGUSDT",
         "https://data-api.binance.vision/api/v3/ticker/price?symbol=PAXGUSDT"
@@ -59,30 +90,26 @@ def fetch_live_gold_spot() -> float:
             res = requests.get(url, timeout=4)
             if res.status_code == 200:
                 price = float(res.json().get("price", 0.0))
-                if price > 1000.0:
+                if price > 1500.0:
                     print(f"[SPOT SUCCESS] Sourced via Binance PAXG: ${price:.2f}")
                     return price
         except Exception:
             continue
 
-    # 2. Secondary Failover: Stooq.com Direct Spot CSV
+    # 4. Fallback: SPDR Gold Shares (GLD) Dynamic Basket Translation
     try:
-        stooq_url = "https://stooq.com/q/l/?s=xauusd&f=sd2t2ohlcv&h&e=csv"
-        res = requests.get(stooq_url, headers={"User-Agent": "Mozilla/5.0"}, timeout=5)
-        if res.status_code == 200:
-            lines = res.text.strip().split("\n")
-            if len(lines) >= 2:
-                cols = lines[1].split(",")
-                close_val = float(cols[6])
-                if close_val > 1000.0:
-                    print(f"[SPOT SUCCESS] Sourced via Stooq XAUUSD: ${close_val:.2f}")
-                    return close_val
+        import yfinance as yf
+        gld_hist = yf.Ticker("GLD").history(period="7d")
+        if not gld_hist.empty:
+            gld_close = float(gld_hist["Close"].dropna().iloc[-1])
+            derived = round(gld_close * 10.82, 2)
+            if derived > 1500.0:
+                print(f"[SPOT SUCCESS] Derived via GLD Basket: ${derived:.2f}")
+                return derived
     except Exception as e:
-        print(f"[SPOT STOOQ SKIP] {e}")
+        print(f"[SPOT GLD SKIP] {e}")
 
-    # 3. Final Anchor
-    print("[SPOT WARN] Feeds unreachable. Defaulting to $2650.00 anchor baseline.")
-    return 2650.0
+    raise RuntimeError("CRITICAL: All gold price feeds unreachable.")
 
 def sync_gex(spot_price: float):
     """Executes institutional options gamma engine and saves cache."""
@@ -133,4 +160,4 @@ def run_sync():
 
 if __name__ == "__main__":
     run_sync()
-        
+    
