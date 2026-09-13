@@ -19,8 +19,14 @@ from free_gex_engine import GoldGEXEngine
 
 # ================= 1. SYSTEM PARAMETERS & CONFIGURATION =================
 FRED_API_KEY = os.getenv("FRED_API_KEY", "").strip()
-TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN", "").strip()
-TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID", "").strip()
+TELEGRAM_BOT_TOKEN = (
+    os.getenv("TELEGRAM_BOT_TOKEN", "") 
+    or os.getenv("BOT_TOKEN", "")
+).strip()
+TELEGRAM_CHAT_ID = (
+    os.getenv("TELEGRAM_CHAT_ID", "") 
+    or os.getenv("CHAT_ID", "")
+).strip()
 TWELVE_DATA_API_KEY = os.getenv("TWELVE_DATA_API_KEY", "").strip()
 LSE_API_KEY = os.getenv("LSE_API_KEY", "").strip()
 
@@ -29,10 +35,10 @@ SCALP_LOG_FILE = "scalp_log.csv"
 LSE_MACRO_FILE = "lse_macro.csv"
 
 # Systematic Decision Hyperparameters
-ALPHA_THRESHOLD_LONG = 4.0
-ALPHA_THRESHOLD_SHORT = -4.0
-DOM_ASYMMETRY_BID_MIN = 1.25
-DOM_ASYMMETRY_ASK_MAX = 0.80
+ALPHA_THRESHOLD_LONG = 3.0
+ALPHA_THRESHOLD_SHORT = -3.0
+DOM_ASYMMETRY_BID_MIN = 1.20
+DOM_ASYMMETRY_ASK_MAX = 0.85
 VOLATILITY_LOOKBACK = 14
 DYNAMIC_ATR_MULTIPLIER = 1.25
 CONFLUENCE_EQUILIBRIUM_TOLERANCE = 3.0
@@ -40,9 +46,6 @@ MIN_RR_THRESHOLD = 1.30
 
 # ================= 2. DATA INGESTION MATRIX =================
 def fetch_twelve_data(interval: str = "1h", outputsize: int = 30) -> Optional[pd.DataFrame]:
-    """
-    Ingests and validates standard OHLCV time-series via Twelve Data REST API.
-    """
     if not TWELVE_DATA_API_KEY:
         return None
 
@@ -76,9 +79,6 @@ def fetch_twelve_data(interval: str = "1h", outputsize: int = 30) -> Optional[pd
 
 # ================= 3. REAL-TIME SPOT PRICE & ORDER BOOK =================
 def get_live_gold_spot() -> Optional[float]:
-    """
-    Fetches millisecond-level live gold spot via Binance PAXGUSDT order tape.
-    """
     endpoints = [
         "https://api.binance.com/api/v3/ticker/price?symbol=PAXGUSDT",
         "https://data-api.binance.vision/api/v3/ticker/price?symbol=PAXGUSDT"
@@ -93,10 +93,6 @@ def get_live_gold_spot() -> Optional[float]:
     return None
 
 def compute_order_book_skew() -> Tuple[float, float]:
-    """
-    Evaluates institutional book imbalance:
-    Skew = sum(Bids) / sum(Asks) within the top 20 Level-2 depth layers.
-    """
     endpoints = [
         "https://api.binance.com/api/v3/depth?symbol=PAXGUSDT&limit=20",
         "https://data-api.binance.vision/api/v3/depth?symbol=PAXGUSDT&limit=20"
@@ -115,12 +111,8 @@ def compute_order_book_skew() -> Tuple[float, float]:
             continue
     return 0.0, 1.0
 
-# ================= 4. CROSS-ASSET BOND TELEMETRY (LSE ENGINE) =================
+# ================= 4. CROSS-ASSET BOND TELEMETRY =================
 def evaluate_lse_bond_telemetry() -> Tuple[float, float, float, str]:
-    """
-    Computes bond yield velocity: v_yield = Y(t) - Y(t-k)
-    Normalizes rate pressure into an institutional alpha score.
-    """
     yield_val, yield_delta = 0.0, 0.0
     impact = "NEUTRAL"
     score = 0.0
@@ -152,7 +144,6 @@ def evaluate_lse_bond_telemetry() -> Tuple[float, float, float, str]:
         except Exception:
             pass
 
-    # Fallback to local persistent cache
     if os.path.exists(LSE_MACRO_FILE):
         try:
             df = pd.read_csv(LSE_MACRO_FILE, on_bad_lines="skip")
@@ -185,28 +176,8 @@ def compute_macro_vector() -> Tuple[float, Dict[str, Any]]:
                 s_tips = 3.0 if d_tips < -0.05 else (-3.0 if d_tips > 0.05 else 0.0)
                 total_alpha += s_tips
                 telemetry["TIPS"] = {"delta": round(d_tips, 2), "alpha": s_tips}
-
-            walcl = fred.get_series('WALCL').dropna()
-            tga = fred.get_series('WTREGEN').dropna()
-            rrp = fred.get_series('RRPONTSYD').dropna()
-            if len(walcl) >= 2 and len(tga) >= 2 and len(rrp) >= 2:
-                liq_curr = walcl.iloc[-1] - tga.iloc[-1] - rrp.iloc[-1]
-                liq_prev = walcl.iloc[-2] - tga.iloc[-2] - rrp.iloc[-2]
-                s_liq = 2.0 if (liq_curr - liq_prev) > 0 else -2.0
-                total_alpha += s_liq
-                telemetry["FedLiquidity"] = {"alpha": s_liq}
         except Exception as e:
-            telemetry["Macro_Error"] = str(e)
-
-    try:
-        dxy_df = fetch_twelve_data("1d", 10)
-        if dxy_df is not None and len(dxy_df) >= 6:
-            d_dxy = float(dxy_df['close'].iloc[-1] - dxy_df['close'].iloc[-6])
-            s_dxy = 2.0 if d_dxy < -0.50 else (-2.0 if d_dxy > 0.50 else 0.0)
-            total_alpha += s_dxy
-            telemetry["DXY"] = {"delta": round(d_dxy, 2), "alpha": s_dxy}
-    except Exception:
-        pass
+            telemetry["FRED_Error"] = str(e)
 
     return total_alpha, telemetry
 
@@ -215,42 +186,17 @@ def compute_mtf_fractals(c_price: float) -> Tuple[bool, str, Dict[str, float]]:
     levels = {}
     gold_1h = fetch_twelve_data("1h", 30)
     gold_30m = fetch_twelve_data("30m", 25)
-    gold_15m = fetch_twelve_data("15m", 20)
-    gold_5m = fetch_twelve_data("5m", 20)
 
-    if any(x is None or len(x) < 8 for x in [gold_1h, gold_30m, gold_15m, gold_5m]):
+    if gold_1h is None or gold_30m is None or len(gold_1h) < 8:
         return False, "NONE", levels
 
     h_1h, l_1h = float(gold_1h['high'].tail(24).max()), float(gold_1h['low'].tail(24).min())
     eq_1h = round((h_1h + l_1h) / 2.0, 2)
-
-    h_30m, l_30m = float(gold_30m['high'].tail(16).max()), float(gold_30m['low'].tail(16).min())
-    eq_30m = round((h_30m + l_30m) / 2.0, 2)
-
     levels["1H_50"] = eq_1h
-    levels["30M_50"] = eq_30m
 
-    r_15m = max(float(abs(gold_15m['high'].iloc[-4] - gold_15m['low'].iloc[-4])), 2.0)
-    levels["15M_4X_Down"] = round(h_1h - (r_15m * 4.0), 2)
-    levels["15M_4X_Up"] = round(l_1h + (r_15m * 4.0), 2)
-
-    r_5m = max(float(abs(gold_5m['high'].iloc[-6] - gold_5m['low'].iloc[-6])), 1.0)
-    levels["5M_4X_Down"] = round(h_1h - (r_5m * 4.0), 2)
-    levels["5M_4X_Up"] = round(l_1h + (r_5m * 4.0), 2)
-
-    bullish_exhaustion = (
-        (abs(eq_1h - levels["15M_4X_Down"]) <= 3.5 or abs(eq_1h - levels["5M_4X_Down"]) <= 2.5 or abs(eq_30m - levels["5M_4X_Down"]) <= 2.0)
-        and (abs(c_price - eq_1h) <= CONFLUENCE_EQUILIBRIUM_TOLERANCE or abs(c_price - eq_30m) <= 2.0)
-    )
-
-    bearish_exhaustion = (
-        (abs(eq_1h - levels["15M_4X_Up"]) <= 3.5 or abs(eq_1h - levels["5M_4X_Up"]) <= 2.5 or abs(eq_30m - levels["5M_4X_Up"]) <= 2.0)
-        and (abs(c_price - eq_1h) <= CONFLUENCE_EQUILIBRIUM_TOLERANCE or abs(c_price - eq_30m) <= 2.0)
-    )
-
-    if bullish_exhaustion:
+    if abs(c_price - l_1h) <= 5.0:
         return True, "BULLISH_EXHAUSTION", levels
-    elif bearish_exhaustion:
+    elif abs(c_price - h_1h) <= 5.0:
         return True, "BEARISH_EXHAUSTION", levels
 
     return False, "NONE", levels
@@ -268,13 +214,7 @@ def compute_risk_envelope() -> Tuple[float, float, float, float, float, float]:
         c_1h = df_1h['close']
         fallback_price = float(c_1h.iloc[-1])
         ema_50_1h = float(c_1h.ewm(span=50, adjust=False).mean().iloc[-1])
-
-        tr = pd.concat([
-            df_1h['high'] - df_1h['low'],
-            (df_1h['high'] - c_1h.shift(1)).abs(),
-            (df_1h['low'] - c_1h.shift(1)).abs()
-        ], axis=1).max(axis=1)
-        rolling_atr = tr.rolling(VOLATILITY_LOOKBACK).mean().iloc[-1]
+        rolling_atr = (df_1h['high'] - df_1h['low']).rolling(VOLATILITY_LOOKBACK).mean().iloc[-1]
         atr_val = float(rolling_atr) if not np.isnan(rolling_atr) and rolling_atr > 0 else 8.50
 
     ema_20_1d = 4380.0
@@ -293,177 +233,147 @@ def dispatch_telegram(message: str) -> bool:
         print("[TG WARN] Credentials missing.")
         return False
     try:
-        res = requests.post(
-            f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage",
-            json={"chat_id": TELEGRAM_CHAT_ID, "text": message, "parse_mode": "Markdown"},
-            timeout=10
-        )
+        url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
+        res = requests.post(url, json={"chat_id": TELEGRAM_CHAT_ID, "text": message, "parse_mode": "HTML"}, timeout=10)
         return res.status_code == 200
     except Exception as e:
         print(f"[TG ERROR] {e}")
         return False
 
 def broadcast_execution_card(side: str, spot: float, sl: float, tp: float, regime_tag: str, call_wall="N/A", put_wall="N/A", net_dex="N/A") -> bool:
-    """Broadcasts valid quant executions with dynamic dealer GEX/DEX context."""
     risk = abs(spot - sl)
     reward = abs(tp - spot)
     rr = round(reward / risk, 2) if risk > 0 else 0.0
     now_utc = datetime.now(timezone.utc).strftime("%H:%M:%S UTC")
 
-    is_blast = "GAMMA_BLAST" in regime_tag or "GAMMA_COLLAPSE" in regime_tag
-    if is_blast:
-        icon = "🚀🟢 *INSTITUTIONAL GAMMA BLAST (LONG)*" if side == "BUY" else "🚀🔴 *INSTITUTIONAL GAMMA COLLAPSE (SHORT)*"
-    else:
-        icon = "⚡🟢 *QUANT LONG EXECUTION*" if side == "BUY" else "⚡🔴 *QUANT SHORT EXECUTION*"
+    is_blast = "GAMMA_BLAST" in regime_tag
+    icon = "🚀🟢 <b>INSTITUTIONAL GAMMA BLAST (LONG)</b>" if (is_blast and side == "BUY") else (
+           "🚀🔴 <b>INSTITUTIONAL GAMMA COLLAPSE (SHORT)</b>" if is_blast else (
+           "⚡🟢 <b>QUANT ALPHA LONG EXECUTION</b>" if side == "BUY" else "⚡🔴 <b>QUANT ALPHA SHORT EXECUTION</b>"))
 
     card = (
         f"{icon}\n"
         f"━━━━━━━━━━━━━━━━━━━━━━━\n"
-        f"🏷 *Model*: `{regime_tag}`\n"
-        f"💵 *Entry Spot*: `${spot:.2f}`\n"
-        f"📐 *Profile*: `Risk: ${risk:.2f} | Target: ${reward:.2f} (1:{rr})`\n"
+        f"🏷 <b>Model</b>: <code>{regime_tag}</code>\n"
+        f"💵 <b>Entry Spot</b>: <code>${spot:.2f}</code>\n"
+        f"📐 <b>Profile</b>: <code>Risk: ${risk:.2f} | Target: ${reward:.2f} (1:{rr})</code>\n"
         f"━━━━━━━━━━━━━━━━━━━━━━━\n"
-        f"🛑 *Structural SL*: `${sl:.2f}`\n"
-        f"🎯 *Liquidity Target*: `${tp:.2f}`\n"
-        f"🛡️ *Dealer Call Wall*: `${call_wall}`\n"
-        f"🛡️ *Dealer Put Wall*: `${put_wall}`\n"
-        f"⚖️ *Net Delta (DEX)*: `{net_dex}`\n"
-        f"⏰ *Epoch*: `{now_utc}`"
+        f"🛑 <b>Structural SL</b>: <code>${sl:.2f}</code>\n"
+        f"🎯 <b>Liquidity Target</b>: <code>${tp:.2f}</code>\n"
+        f"🛡️ <b>Call Wall</b>: <code>${call_wall}</code>\n"
+        f"🛡️ <b>Put Wall</b>: <code>${put_wall}</code>\n"
+        f"⚖️ <b>Net Delta (DEX)</b>: <code>{net_dex}</code>\n"
+        f"⏰ <b>Epoch</b>: <code>{now_utc}</code>"
     )
     return dispatch_telegram(card)
 
 def broadcast_gatekeeper_rejection(reason: str, strategy: str, offered_rr: float, barrier="NONE") -> bool:
-    """Broadcasts gatekeeper rejections (Low R:R or Options GEX barriers)."""
     now_utc = datetime.now(timezone.utc).strftime("%H:%M:%S UTC")
     msg = (
-        f"🛑 *GATEKEEPER REJECTION*\n"
+        f"🛑 <b>GATEKEEPER REJECTION</b>\n"
         f"━━━━━━━━━━━━━━━━━━━━━━━\n"
-        f"• *Strategy*: `{strategy}`\n"
-        f"• *Block Reason*: `{reason}`\n"
-        f"• *Offered R:R*: `1:{offered_rr:.2f}` (Min: 1:1.30)\n"
-        f"• *GEX Barrier*: `{barrier}`\n"
-        f"• *Timestamp*: `{now_utc}`\n"
+        f"• <b>Strategy</b>: <code>{strategy}</code>\n"
+        f"• <b>Block Reason</b>: <code>{reason}</code>\n"
+        f"• <b>Offered R:R</b>: <code>1:{offered_rr:.2f}</code> (Min: 1:1.30)\n"
+        f"• <b>GEX Barrier</b>: <code>{barrier}</code>\n"
+        f"• <b>Timestamp</b>: <code>{now_utc}</code>\n"
         f"━━━━━━━━━━━━━━━━━━━━━━━\n"
-        f"⚡ *Verdict*: Capital Protected"
+        f"⚡ <b>Verdict</b>: Capital Protected"
     )
     return dispatch_telegram(msg)
-
-def broadcast_weekly_summary(metrics: dict) -> bool:
-    """Broadcasts rolling 7-day performance metrics."""
-    msg = (
-        f"📋 *7-DAY ROLLING AUDIT REPORT*\n"
-        f"━━━━━━━━━━━━━━━━━━━━━━━\n"
-        f"• *Total Setups*: `{metrics.get('total_trades', 0)}`\n"
-        f"• *Win Rate*: `{metrics.get('win_rate', 0.0):.1f}%` ({metrics.get('wins', 0)}W / {metrics.get('losses', 0)}L)\n"
-        f"• *Profit Factor*: `{metrics.get('profit_factor', 0.0):.2f}`\n"
-        f"• *Net PnL*: `{metrics.get('net_pnl', 0.0):+.2f} USD`\n"
-        f"• *Max Drawdown*: `{metrics.get('max_drawdown', 0.0):.2f}%`\n"
-        f"• *Blocked Setups*: `{metrics.get('rejected_count', 0)}`\n"
-        f"━━━━━━━━━━━━━━━━━━━━━━━\n"
-        f"⚡ *Pipeline Status*: Production Active"
-    )
-    return dispatch_telegram(msg)
-
-def broadcast_market_pulse(spot: float, call_wall: float, put_wall: float, gamma_flip: float, regime: str, us10y_yield: float, us10y_impact: str, net_dex: float = 0.0, blast_active: bool = False) -> bool:
-    """
-    Broadcasts periodic institutional telemetry even when NO trades are triggered.
-    Includes Net Delta (DEX) & Gamma Blast Squeeze status.
-    """
-    now_utc = datetime.now(timezone.utc).strftime("%H:%M UTC | %d %b %Y")
-    
-    dist_call = call_wall - spot
-    dist_put = spot - put_wall
-    
-    # Proximity & Gatekeeper Assessment
-    if blast_active:
-        barrier_status = f"🚀 *GAMMA BLAST REGIME*: High directional flow detected. Dealer walls in squeeze bypass mode."
-    elif 0 <= dist_call <= 5.0:
-        barrier_status = f"⚠️ *PROXIMITY WARNING*: Spot testing Call Wall (${call_wall:.2f}) [Distance: ${dist_call:.2f}]"
-    elif 0 <= dist_put <= 5.0:
-        barrier_status = f"⚠️ *PROXIMITY WARNING*: Spot testing Put Wall (${put_wall:.2f}) [Distance: ${dist_put:.2f}]"
-    else:
-        barrier_status = f"🟢 *CORRIDOR CLEAR*: Spot inside boundaries (Call: +${dist_call:.2f} | Put: -${dist_put:.2f})"
-
-    regime_tag = "🟩 LONG GAMMA (Mean-Reverting)" if "LONG_GAMMA" in regime else "🟥 SHORT GAMMA (Volatility Expansion)"
-    macro_icon = "🟢" if us10y_impact == "BULLISH_TAILWIND" else ("🔴" if us10y_impact == "BEARISH_PRESSURE" else "⚪")
-    dex_bias = "🟢 Dealer Net Long" if net_dex > 0 else ("🔴 Dealer Net Short" if net_dex < 0 else "⚪ Neutral")
-
-    pulse_card = (
-        f"📡 *INSTITUTIONAL MARKET RADAR PULSE*\n"
-        f"━━━━━━━━━━━━━━━━━━━━━━━\n"
-        f"💵 *Live Spot/Futures*: `${spot:.2f}`\n"
-        f"🏛 *US10Y Yield*: `{us10y_yield:.2f}%` {macro_icon} `{us10y_impact}`\n"
-        f"⚡ *Dealer Regime*: {regime_tag}\n"
-        f"⚖️ *Net Delta (DEX)*: `{net_dex:+.1f}M` ({dex_bias})\n"
-        f"━━━━━━━━━━━━━━━━━━━━━━━\n"
-        f"🧱 *Gamma Corridors*:\n"
-        f"• *Call Wall (Ceiling)*: `${call_wall:.2f}`\n"
-        f"• *Put Wall (Floor)*: `${put_wall:.2f}`\n"
-        f"• *Gamma Neutral Flip*: `${gamma_flip:.2f}`\n"
-        f"━━━━━━━━━━━━━━━━━━━━━━━\n"
-        f"🛡️ *Corridor Telemetry*:\n"
-        f"{barrier_status}\n"
-        f"⏰ *Synced*: `{now_utc}`"
-    )
-    return dispatch_telegram(pulse_card)
-
-def is_duplicate_order(signal: str, price: float) -> bool:
-    if not os.path.exists(TRADE_LOG_FILE):
-        return False
-    try:
-        df = pd.read_csv(TRADE_LOG_FILE, on_bad_lines='skip')
-        active = df[df['Signal'].isin(['BUY', 'SELL'])]
-        if active.empty:
-            return False
-        last = active.iloc[-1]
-        return last['Signal'] == signal and abs(float(last['Price']) - price) <= 2.0
-    except Exception:
-        return False
 
 # ================= 9. QUANTITATIVE ARBITRATION PIPELINE =================
 def execute_systematic_pipeline():
+    print(f"[SIGNAL ARBITRATION] Initializing Pipeline Run at UTC {datetime.now(timezone.utc).strftime('%H:%M:%S')}...")
+    
     macro_alpha, macro_telemetry = compute_macro_vector()
     dom_alpha, dom_ratio = compute_order_book_skew()
     composite_alpha = macro_alpha + dom_alpha
+    print(f"[ALPHA METRICS] Macro Alpha: {macro_alpha:+.1f} | DOM Alpha: {dom_alpha:+.1f} (Skew: {dom_ratio:.2f}) | Composite: {composite_alpha:+.1f}")
 
     fallback_price, ema_50_1h, ema_20_1d, pdh, pdl, atr_1h = compute_risk_envelope()
     live_spot = get_live_gold_spot()
     spot = live_spot if live_spot is not None else fallback_price
+    print(f"[SPOT RESOLUTION] Active Spot Price: ${spot:.2f} (ATR-1H: ${atr_1h:.2f})")
 
     confluence_active, conf_type, matrix = compute_mtf_fractals(spot)
-    session_active = (7 <= datetime.now(timezone.utc).hour <= 18)
+    weekday = datetime.now(timezone.utc).weekday() # 0 = Monday, 6 = Sunday
+    is_weekend = weekday >= 5
 
     # 1. Pull Institutional Options GEX & DEX Boundaries
     gex_data = GoldGEXEngine.read_cached_levels()
-    call_wall = float(gex_data.get("call_wall_xau", float("inf")))
-    put_wall = float(gex_data.get("put_wall_xau", 0.0))
+    call_wall = float(gex_data.get("call_wall_xau", 4588.34))
+    put_wall = float(gex_data.get("put_wall_xau", 4422.50))
     net_dex = float(gex_data.get("net_dex_m", 0.0))
     gamma_blast_allowed = bool(gex_data.get("gamma_blast_active", False))
-    gex_cushion = max(0.5 * atr_1h, 2.0)
+    gex_cushion = max(0.5 * atr_1h, 3.0)
+
+    print(f"[GEX STATUS] Call Wall: ${call_wall:.2f} | Put Wall: ${put_wall:.2f} | Net DEX: {net_dex:+.1f}M | Squeeze Blast: {gamma_blast_allowed}")
+
+    if is_weekend:
+        print("[PIPELINE STATUS] Market is currently CLOSED for the weekend. Active trade signals are systematically paused.")
+        return
 
     signal = "NEUTRAL"
-    sl, tp, be = None, None, None
+    sl, tp = None, None
     conviction = "EQUILIBRIUM"
-
     spread_buffer = 2.50
     risk_unit = round(atr_1h * DYNAMIC_ATR_MULTIPLIER, 2)
 
-    # Quantitative Decision Gate with Gamma Blast Exemption
-    if session_active:
-        if composite_alpha >= ALPHA_THRESHOLD_LONG and spot > ema_50_1h and spot > ema_20_1d:
-            if confluence_active and conf_type == "BULLISH_EXHAUSTION" and dom_ratio >= DOM_ASYMMETRY_BID_MIN:
-                target_sl = round(spot - (risk_unit + spread_buffer), 2)
-                target_tp = round(max(pdh, spot + (risk_unit * 2.0) + spread_buffer), 2)
-                offered_rr = (target_tp - spot) / (spot - target_sl) if (spot - target_sl) > 0 else 0
+    # --- BUY EVALUATION GATE ---
+    if composite_alpha >= ALPHA_THRESHOLD_LONG:
+        target_sl = round(spot - (risk_unit + spread_buffer), 2)
+        target_tp = round(max(pdh, spot + (risk_unit * 2.0) + spread_buffer), 2)
+        offered_rr = (target_tp - spot) / (spot - target_sl) if (spot - target_sl) > 0 else 0.0
+        near_call_wall = 0 <= (call_wall - spot) <= gex_cushion
 
-                near_call_wall = 0 <= (call_wall - spot) <= gex_cushion
+        if near_call_wall and not gamma_blast_allowed:
+            broadcast_gatekeeper_rejection("Approaching Call Wall Ceiling without Blast Squeeze", "QUANT_LONG", offered_rr, f"${call_wall:.2f}")
+        elif offered_rr < MIN_RR_THRESHOLD:
+            broadcast_gatekeeper_rejection("Sub-optimal Risk:Reward Profile", "QUANT_LONG", offered_rr, "NONE")
+        else:
+            signal = "BUY"
+            conviction = "GAMMA_BLAST_LONG_SQUEEZE" if gamma_blast_allowed else "QUANT_TREND_EXPANSION"
+            sl, tp = target_sl, target_tp
 
-                # Gamma Blast Exemption Check for BUY
-                if near_call_wall and (gamma_blast_allowed or (net_dex > 10.0 and composite_alpha >= 5.0)):
-                    signal = "BUY"
-                    conviction = "GAMMA_BLAST_LONG_SQUEEZE"
-                    sl = target_sl
-                    tp = round(spot + (risk_unit * 3.0), 2)
-                    be = round(spot + risk_unit, 2)
-                elif near_call_wall:
-                    broadcast_gate
+    # --- SELL EVALUATION GATE ---
+    elif composite_alpha <= ALPHA_THRESHOLD_SHORT:
+        target_sl = round(spot + (risk_unit + spread_buffer), 2)
+        target_tp = round(min(pdl, spot - (risk_unit * 2.0) - spread_buffer), 2)
+        offered_rr = (spot - target_tp) / (target_sl - spot) if (target_sl - spot) > 0 else 0.0
+        near_put_wall = 0 <= (spot - put_wall) <= gex_cushion
+
+        if near_put_wall and not gamma_blast_allowed:
+            broadcast_gatekeeper_rejection("Approaching Put Wall Floor without Gamma Collapse", "QUANT_SHORT", offered_rr, f"${put_wall:.2f}")
+        elif offered_rr < MIN_RR_THRESHOLD:
+            broadcast_gatekeeper_rejection("Sub-optimal Risk:Reward Profile", "QUANT_SHORT", offered_rr, "NONE")
+        else:
+            signal = "SELL"
+            conviction = "GAMMA_COLLAPSE_SHORT" if gamma_blast_allowed else "QUANT_TREND_PULLBACK"
+            sl, tp = target_sl, target_tp
+
+    # --- DISPATCH SIGNAL IF QUALIFIED ---
+    if signal in ["BUY", "SELL"] and sl and tp:
+        print(f"[ACTION TRIGGERED] Firing {signal} signal into Telegram...")
+        broadcast_execution_card(signal, spot, sl, tp, conviction, str(call_wall), str(put_wall), f"{net_dex:+.1f}M")
+        
+        # Append into trade_log.csv
+        log_entry = pd.DataFrame([{
+            "Timestamp": datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S"),
+            "Signal": signal,
+            "Price": spot,
+            "SL": sl,
+            "TP": tp,
+            "Model": conviction
+        }])
+        if not os.path.exists(TRADE_LOG_FILE):
+            log_entry.to_csv(TRADE_LOG_FILE, index=False)
+        else:
+            log_entry.to_csv(TRADE_LOG_FILE, mode='a', header=False, index=False)
+    else:
+        print(f"[PIPELINE EQUILIBRIUM] No trade qualified. State: Neutral / Corridor Range.")
+
+# ================= 10. MAIN RUNNER ENTRYPOINT =================
+if __name__ == "__main__":
+    execute_systematic_pipeline()
+    
