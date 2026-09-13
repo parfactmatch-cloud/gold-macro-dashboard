@@ -4,6 +4,7 @@ LSE Isolated Macro & Options GEX Sync Engine
 - Computes SPDR Gold Shares (GLD) dealer Gamma Walls & Flip -> saves to 'gex_levels.json'
 - Multi-Source Spot Feed: CME Futures (GC=F) -> Stooq XAUUSD -> Binance PAXGUSDT -> GLD NAV
 - Regime-agnostic: Directly supports CME GC1! $4,400+ pricing without static baseline truncations
+- Periodic Radar Telemetry: Automatically broadcasts institutional corridors to Telegram
 """
 
 import os
@@ -13,6 +14,12 @@ from datetime import datetime, timezone
 
 # GEX Engine Import (free_gex_engine.py must reside in the same execution path)
 from free_gex_engine import GoldGEXEngine
+
+# Telegram Engine Broadcast Import
+try:
+    from telegram_engine import broadcast_market_pulse
+except ImportError:
+    broadcast_market_pulse = None
 
 LSE_API_KEY = os.getenv("LSE_API_KEY", "").strip()
 LSE_MACRO_FILE = "lse_macro.csv"
@@ -132,6 +139,8 @@ def run_sync():
     print(f"[LSE SYNC RUN] UTC: {datetime.now(timezone.utc).strftime('%H:%M:%S')}")
     
     # 1. Fetch US10Y Bond Yield (Macro Directional Filter)
+    latest_val = 0.0
+    gold_macro_impact = "NEUTRAL"
     df_us10y = fetch_lse_series("US10Y", limit=5)
     
     if df_us10y is not None and not df_us10y.empty:
@@ -156,7 +165,23 @@ def run_sync():
 
     # 2. Options Gamma Exposure (GEX) Calculation
     spot_xau = fetch_live_gold_spot()
-    sync_gex(spot_price=spot_xau)
+    gex_data = sync_gex(spot_price=spot_xau)
+
+    # 3. Periodic Market Radar Telemetry Dispatch
+    if broadcast_market_pulse and gex_data and gex_data.get("status") in ["HEALTHY", "FALLBACK_DEGRADED"]:
+        try:
+            broadcast_market_pulse(
+                spot=spot_xau,
+                call_wall=float(gex_data.get("call_wall_xau", 0.0)),
+                put_wall=float(gex_data.get("put_wall_xau", 0.0)),
+                gamma_flip=float(gex_data.get("gamma_flip_xau", 0.0)),
+                regime=str(gex_data.get("net_gamma_regime", "UNKNOWN")),
+                us10y_yield=latest_val,
+                us10y_impact=gold_macro_impact
+            )
+            print("[PULSE SUCCESS] Institutional Market Radar Pulse broadcasted to Telegram.")
+        except Exception as e:
+            print(f"[PULSE WARN] Could not dispatch pulse: {e}")
 
 if __name__ == "__main__":
     run_sync()
