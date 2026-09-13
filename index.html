@@ -2,150 +2,493 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Gold Macro & GEX Engine | Institutional Suite</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>ARES-XAU | Institutional Macro & Gamma Synchronization Engine</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@300;400;500;700&family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
     <style>
         :root {
-            --bg-color: #0b0e14;
-            --card-bg: #151922;
-            --accent-gold: #e5a93c;
-            --accent-green: #2ecc71;
-            --accent-red: #e74c3c;
-            --text-main: #f0f3f8;
-            --text-dim: #8b949e;
+            --bg: #07090e;
+            --surface: rgba(16, 21, 32, 0.75);
+            --surface-border: rgba(255, 255, 255, 0.08);
+            --surface-hover: rgba(26, 33, 49, 0.85);
+            --gold: #f59e0b;
+            --gold-glow: rgba(245, 158, 11, 0.25);
+            --green: #10b981;
+            --green-glow: rgba(16, 185, 129, 0.2);
+            --red: #ef4444;
+            --text-main: #f8fafc;
+            --text-muted: #94a3b8;
+            --text-dim: #64748b;
+            --font-main: 'Plus Jakarta Sans', sans-serif;
+            --font-mono: 'JetBrains Mono', monospace;
         }
-        body {
-            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-            background-color: var(--bg-color);
-            color: var(--text-main);
+
+        * {
+            box-sizing: border-box;
             margin: 0;
-            padding: 24px;
+            padding: 0;
+            -webkit-tap-highlight-color: transparent;
+        }
+
+        body {
+            background-color: var(--bg);
+            background-image: 
+                radial-gradient(circle at 50% 0%, rgba(245, 158, 11, 0.08) 0%, transparent 60%),
+                radial-gradient(circle at 100% 100%, rgba(16, 185, 129, 0.04) 0%, transparent 40%);
+            color: var(--text-main);
+            font-family: var(--font-main);
+            min-height: 100vh;
+            padding: 24px 16px 60px;
+            display: flex;
+            justify-content: center;
+        }
+
+        .layout {
+            max-width: 520px;
+            width: 100%;
             display: flex;
             flex-direction: column;
+            gap: 20px;
+        }
+
+        /* Top Bar */
+        .header {
+            display: flex;
             align-items: center;
+            justify-content: space-between;
+            padding-bottom: 8px;
+            border-bottom: 1px solid var(--surface-border);
         }
-        .container {
-            max-width: 720px;
-            width: 100%;
+
+        .brand {
+            display: flex;
+            align-items: center;
+            gap: 10px;
         }
-        header {
-            text-align: center;
-            margin-bottom: 28px;
+
+        .brand-icon {
+            width: 32px;
+            height: 32px;
+            background: linear-gradient(135deg, var(--gold), #b45309);
+            border-radius: 8px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: 800;
+            color: #000;
+            font-size: 15px;
+            box-shadow: 0 0 16px var(--gold-glow);
         }
-        h1 {
-            color: var(--accent-gold);
-            font-size: 26px;
-            margin-bottom: 6px;
+
+        .brand-text h1 {
+            font-size: 16px;
+            font-weight: 700;
+            letter-spacing: -0.3px;
         }
-        .badge {
-            background: #21262d;
-            border: 1px solid #30363d;
+
+        .brand-text p {
+            font-size: 11px;
+            color: var(--text-dim);
+            font-family: var(--font-mono);
+        }
+
+        .status-pill {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            background: rgba(16, 185, 129, 0.1);
+            border: 1px solid rgba(16, 185, 129, 0.3);
             padding: 4px 10px;
-            border-radius: 12px;
+            border-radius: 20px;
+            font-size: 11px;
+            font-weight: 600;
+            color: var(--green);
+            font-family: var(--font-mono);
+        }
+
+        .pulse-dot {
+            width: 6px;
+            height: 6px;
+            background: var(--green);
+            border-radius: 50%;
+            box-shadow: 0 0 8px var(--green);
+            animation: ping 1.8s infinite;
+        }
+
+        @keyframes ping {
+            0%, 100% { opacity: 1; transform: scale(1); }
+            50% { opacity: 0.4; transform: scale(0.85); }
+        }
+
+        /* Glass Cards */
+        .glass-card {
+            background: var(--surface);
+            backdrop-filter: blur(16px);
+            -webkit-backdrop-filter: blur(16px);
+            border: 1px solid var(--surface-border);
+            border-radius: 16px;
+            padding: 20px;
+            position: relative;
+            overflow: hidden;
+            box-shadow: 0 10px 30px -10px rgba(0, 0, 0, 0.5);
+        }
+
+        .card-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            margin-bottom: 16px;
+        }
+
+        .card-title {
+            font-size: 12px;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            color: var(--text-muted);
+            font-weight: 600;
+            font-family: var(--font-mono);
+        }
+
+        /* Primary Ticker Hero */
+        .ticker-hero {
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
+            padding-bottom: 16px;
+            border-bottom: 1px dashed var(--surface-border);
+        }
+
+        .ticker-meta {
             font-size: 12px;
             color: var(--text-dim);
-            display: inline-block;
+            font-family: var(--font-mono);
         }
-        .card {
-            background: var(--card-bg);
-            border: 1px solid #252b38;
-            border-radius: 12px;
-            padding: 20px;
-            margin-bottom: 20px;
-            box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+
+        .ticker-val {
+            font-size: 34px;
+            font-weight: 800;
+            font-family: var(--font-mono);
+            letter-spacing: -1px;
+            color: #fff;
+            display: flex;
+            align-items: baseline;
+            gap: 8px;
         }
-        .grid {
+
+        .ticker-val span {
+            font-size: 14px;
+            color: var(--green);
+            font-weight: 500;
+        }
+
+        /* Matrix Grid */
+        .grid-matrix {
             display: grid;
             grid-template-columns: 1fr 1fr;
             gap: 12px;
-            margin-top: 14px;
+            margin-top: 16px;
         }
-        .metric-box {
-            background: #1c212c;
-            padding: 12px;
-            border-radius: 8px;
-            border-left: 3px solid var(--accent-gold);
-        }
-        .metric-title {
-            font-size: 12px;
-            color: var(--text-dim);
-            text-transform: uppercase;
-        }
-        .metric-val {
-            font-size: 18px;
-            font-weight: bold;
-            margin-top: 4px;
-        }
-        .btn-group {
+
+        .metric-cell {
+            background: rgba(255, 255, 255, 0.02);
+            border: 1px solid rgba(255, 255, 255, 0.04);
+            border-radius: 12px;
+            padding: 12px 14px;
             display: flex;
-            gap: 12px;
-            margin-top: 20px;
+            flex-direction: column;
+            gap: 4px;
+            transition: all 0.2s;
         }
-        .btn {
-            flex: 1;
-            padding: 12px;
-            border-radius: 8px;
+
+        .metric-cell:hover {
+            background: var(--surface-hover);
+            border-color: rgba(255, 255, 255, 0.09);
+        }
+
+        .metric-lbl {
+            font-size: 10px;
+            text-transform: uppercase;
+            color: var(--text-dim);
+            font-family: var(--font-mono);
+            letter-spacing: 0.5px;
+        }
+
+        .metric-data {
+            font-size: 16px;
+            font-weight: 700;
+            font-family: var(--font-mono);
+        }
+
+        .metric-sub {
+            font-size: 10px;
+            color: var(--text-muted);
+        }
+
+        /* Gamma Corridor Bar */
+        .corridor-bar-wrap {
+            margin-top: 18px;
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+        }
+
+        .corridor-labels {
+            display: flex;
+            justify-content: space-between;
+            font-size: 11px;
+            font-family: var(--font-mono);
+            color: var(--text-muted);
+        }
+
+        .corridor-track {
+            height: 8px;
+            background: #151a24;
+            border-radius: 10px;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .corridor-fill {
+            position: absolute;
+            left: 20%;
+            right: 15%;
+            height: 100%;
+            background: linear-gradient(90deg, var(--green), var(--gold));
+            border-radius: 10px;
+            opacity: 0.8;
+        }
+
+        .corridor-pointer {
+            position: absolute;
+            left: 45%;
+            top: -2px;
+            width: 4px;
+            height: 12px;
+            background: #fff;
+            border-radius: 2px;
+            box-shadow: 0 0 8px #fff;
+        }
+
+        /* CTAs */
+        .cta-group {
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+            margin-top: 8px;
+        }
+
+        .btn-primary {
+            background: linear-gradient(135deg, var(--gold), #d97706);
+            color: #000;
+            font-weight: 700;
+            padding: 14px;
+            border-radius: 12px;
             text-align: center;
-            font-weight: 600;
             text-decoration: none;
-            transition: 0.2s ease;
+            font-size: 14px;
+            box-shadow: 0 4px 20px var(--gold-glow);
+            transition: transform 0.15s ease;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
         }
-        .btn-gold {
-            background: var(--accent-gold);
-            color: #0b0e14;
+
+        .btn-primary:active {
+            transform: scale(0.98);
         }
-        .btn-outline {
-            background: #1c212c;
-            border: 1px solid #30363d;
+
+        .btn-secondary {
+            background: rgba(255, 255, 255, 0.04);
+            border: 1px solid var(--surface-border);
             color: var(--text-main);
+            font-weight: 600;
+            padding: 13px;
+            border-radius: 12px;
+            text-align: center;
+            text-decoration: none;
+            font-size: 13px;
+            transition: all 0.2s;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
         }
-        .btn:hover {
-            opacity: 0.85;
+
+        .btn-secondary:active {
+            background: rgba(255, 255, 255, 0.08);
+            transform: scale(0.98);
+        }
+
+        /* Features Accordion List */
+        .feature-item {
+            display: flex;
+            align-items: flex-start;
+            gap: 12px;
+            padding: 10px 0;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.03);
+        }
+
+        .feature-item:last-child {
+            border-bottom: none;
+            padding-bottom: 0;
+        }
+
+        .feature-icon {
+            font-size: 14px;
+            background: rgba(255, 255, 255, 0.05);
+            padding: 6px;
+            border-radius: 8px;
+        }
+
+        .feature-body h4 {
+            font-size: 13px;
+            font-weight: 600;
+        }
+
+        .feature-body p {
+            font-size: 11px;
+            color: var(--text-dim);
+            margin-top: 2px;
+            line-height: 1.4;
+        }
+
+        .footer-note {
+            text-align: center;
+            font-size: 11px;
+            color: var(--text-dim);
+            font-family: var(--font-mono);
+            margin-top: 10px;
         }
     </style>
 </head>
 <body>
-    <div class="container">
-        <header>
-            <h1>⚡ Gold Macro & GEX Suite</h1>
-            <div class="badge">Institutional Volatility & Options Telemetry</div>
-        </header>
 
-        <div class="card">
-            <h3 style="margin-top:0;">Live Engine Snapshot</h3>
-            <div class="grid" id="telemetry-grid">
-                <div class="metric-box">
-                    <div class="metric-title">Call Wall (Ceiling)</div>
-                    <div class="metric-val" id="call-wall">$4,588.34</div>
-                </div>
-                <div class="metric-box">
-                    <div class="metric-title">Put Wall (Floor)</div>
-                    <div class="metric-val" id="put-wall">$4,422.50</div>
-                </div>
-                <div class="metric-box">
-                    <div class="metric-title">Dealer Net DEX</div>
-                    <div class="metric-val" style="color:var(--accent-green);">+1,585.8M</div>
-                </div>
-                <div class="metric-box">
-                    <div class="metric-title">US10Y Macro Yield</div>
-                    <div class="metric-val" style="color:var(--accent-red);">4.92% (Bearish)</div>
-                </div>
+<div class="layout">
+    <!-- Top Identity -->
+    <header class="header">
+        <div class="brand">
+            <div class="brand-icon">Ω</div>
+            <div class="brand-text">
+                <h1>ARES GOLD QUANT</h1>
+                <p>GC1! / XAUUSD REGIME ENGINE</p>
+            </div>
+        </div>
+        <div class="status-pill">
+            <div class="pulse-dot"></div>
+            <span>LIVE 24/7</span>
+        </div>
+    </header>
+
+    <!-- Main Telemetry Card -->
+    <main class="glass-card">
+        <div class="card-header">
+            <span class="card-title">Institutional Telemetry</span>
+            <span style="font-size: 11px; font-family: var(--font-mono); color: var(--gold);">SYNCHRONIZED</span>
+        </div>
+
+        <div class="ticker-hero">
+            <div class="ticker-meta">CME CONTINUOUS FUTURES (GC=F)</div>
+            <div class="ticker-val">$4,408.90 <span>▲ ABSORPTION</span></div>
+        </div>
+
+        <!-- 2x2 Quant Matrix -->
+        <div class="grid-matrix">
+            <div class="metric-cell" style="border-left: 2px solid var(--red);">
+                <div class="metric-lbl">Dealer Call Wall</div>
+                <div class="metric-data" style="color: var(--text-main);">$4,588.34</div>
+                <div class="metric-sub">+179.44 Ceiling Buffer</div>
             </div>
 
-            <div class="btn-group">
-                <a href="https://25bappkbsjnisr7.streamlit.app" target="_blank" class="btn btn-gold">Launch Live Dashboard</a>
-                <a href="https://t.me/" target="_blank" class="btn btn-outline">Join Telegram Radar</a>
+            <div class="metric-cell" style="border-left: 2px solid var(--green);">
+                <div class="metric-lbl">Dealer Put Wall</div>
+                <div class="metric-data" style="color: var(--text-main);">$4,422.50</div>
+                <div class="metric-sub">Inventory Floor Reclaim</div>
+            </div>
+
+            <div class="metric-cell">
+                <div class="metric-lbl">Net DEX Tilt</div>
+                <div class="metric-data" style="color: var(--green);">+1,585.8M</div>
+                <div class="metric-sub">Dealers Net Long Delta</div>
+            </div>
+
+            <div class="metric-cell">
+                <div class="metric-lbl">US10Y Yield Vector</div>
+                <div class="metric-data" style="color: #f87171;">4.92%</div>
+                <div class="metric-sub">Bearish Macro Pressure</div>
             </div>
         </div>
 
-        <div class="card">
-            <h3 style="margin-top:0;">Mobile App & APK</h3>
-            <p style="font-size: 14px; color: var(--text-dim);">
-                Download the standalone Android build for 24/7 push-notifications, instant barrier proximity alarms, and background telemetry synchronization.
-            </p>
-            <a href="https://github.com/parfactmatch-cloud/gold-macro-dashboard/releases" class="btn btn-outline" style="display:block;">View Releases & Download APK</a>
+        <!-- Corridor Dynamic Visualizer -->
+        <div class="corridor-bar-wrap">
+            <div class="corridor-labels">
+                <span>Put Wall $4,422</span>
+                <span style="color: var(--gold); font-weight: 600;">Spot $4,408</span>
+                <span>Call Wall $4,588</span>
+            </div>
+            <div class="corridor-track">
+                <div class="corridor-fill"></div>
+                <div class="corridor-pointer"></div>
+            </div>
+        </div>
+    </main>
+
+    <!-- Execution & Terminals -->
+    <div class="glass-card">
+        <div class="card-header">
+            <span class="card-title">Production Portals</span>
+        </div>
+        <div class="cta-group">
+            <a href="https://25bappkbsjnisr7.streamlit.app" target="_blank" class="btn-primary">
+                <span>⚡</span> Launch Streamlit Terminal
+            </a>
+            <a href="https://github.com/parfactmatch-cloud/gold-macro-dashboard/releases" class="btn-secondary">
+                <span>📦</span> Download Android APK & Binaries
+            </a>
+            <a href="https://t.me/" target="_blank" class="btn-secondary">
+                <span>📡</span> Direct Telegram Telemetry Stream
+            </a>
         </div>
     </div>
+
+    <!-- Core Architecture Specs -->
+    <div class="glass-card">
+        <div class="card-header">
+            <span class="card-title">Quantitative Framework</span>
+        </div>
+
+        <div class="feature-item">
+            <div class="feature-icon">🧱</div>
+            <div class="feature-body">
+                <h4>Dealer Gamma Corridors (GEX)</h4>
+                <p>Calculates second-order derivative hedging pressures on GLD options translated dynamically into CME GC1! $4,400+ spot parity.</p>
+            </div>
+        </div>
+
+        <div class="feature-item">
+            <div class="feature-icon">🏛️</div>
+            <div class="feature-body">
+                <h4>Cross-Asset Bond Telemetry</h4>
+                <p>Monitors London Strategic Edge (LSE) US10Y yields and FRED TIPS real rate slopes for directional macro filtering.</p>
+            </div>
+        </div>
+
+        <div class="feature-item">
+            <div class="feature-icon">🛡️</div>
+            <div class="feature-body">
+                <h4>Gatekeeper Risk Pipeline</h4>
+                <p>Automatically suppresses entries inside equilibrium channels or when R:R offers less than 1:1.30 against dealer walls.</p>
+            </div>
+        </div>
+    </div>
+
+    <div class="footer-note">
+        AUTOMATED VIA GITHUB ACTIONS CI/CD • REPO: PARFACTMATCH-CLOUD
+    </div>
+</div>
+
 </body>
 </html>
 
