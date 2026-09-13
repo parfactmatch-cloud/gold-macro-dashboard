@@ -1,0 +1,151 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Gold Macro & GEX Engine | Institutional Suite</title>
+    <style>
+        :root {
+            --bg-color: #0b0e14;
+            --card-bg: #151922;
+            --accent-gold: #e5a93c;
+            --accent-green: #2ecc71;
+            --accent-red: #e74c3c;
+            --text-main: #f0f3f8;
+            --text-dim: #8b949e;
+        }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+            background-color: var(--bg-color);
+            color: var(--text-main);
+            margin: 0;
+            padding: 24px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }
+        .container {
+            max-width: 720px;
+            width: 100%;
+        }
+        header {
+            text-align: center;
+            margin-bottom: 28px;
+        }
+        h1 {
+            color: var(--accent-gold);
+            font-size: 26px;
+            margin-bottom: 6px;
+        }
+        .badge {
+            background: #21262d;
+            border: 1px solid #30363d;
+            padding: 4px 10px;
+            border-radius: 12px;
+            font-size: 12px;
+            color: var(--text-dim);
+            display: inline-block;
+        }
+        .card {
+            background: var(--card-bg);
+            border: 1px solid #252b38;
+            border-radius: 12px;
+            padding: 20px;
+            margin-bottom: 20px;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+        }
+        .grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 12px;
+            margin-top: 14px;
+        }
+        .metric-box {
+            background: #1c212c;
+            padding: 12px;
+            border-radius: 8px;
+            border-left: 3px solid var(--accent-gold);
+        }
+        .metric-title {
+            font-size: 12px;
+            color: var(--text-dim);
+            text-transform: uppercase;
+        }
+        .metric-val {
+            font-size: 18px;
+            font-weight: bold;
+            margin-top: 4px;
+        }
+        .btn-group {
+            display: flex;
+            gap: 12px;
+            margin-top: 20px;
+        }
+        .btn {
+            flex: 1;
+            padding: 12px;
+            border-radius: 8px;
+            text-align: center;
+            font-weight: 600;
+            text-decoration: none;
+            transition: 0.2s ease;
+        }
+        .btn-gold {
+            background: var(--accent-gold);
+            color: #0b0e14;
+        }
+        .btn-outline {
+            background: #1c212c;
+            border: 1px solid #30363d;
+            color: var(--text-main);
+        }
+        .btn:hover {
+            opacity: 0.85;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>⚡ Gold Macro & GEX Suite</h1>
+            <div class="badge">Institutional Volatility & Options Telemetry</div>
+        </header>
+
+        <div class="card">
+            <h3 style="margin-top:0;">Live Engine Snapshot</h3>
+            <div class="grid" id="telemetry-grid">
+                <div class="metric-box">
+                    <div class="metric-title">Call Wall (Ceiling)</div>
+                    <div class="metric-val" id="call-wall">$4,588.34</div>
+                </div>
+                <div class="metric-box">
+                    <div class="metric-title">Put Wall (Floor)</div>
+                    <div class="metric-val" id="put-wall">$4,422.50</div>
+                </div>
+                <div class="metric-box">
+                    <div class="metric-title">Dealer Net DEX</div>
+                    <div class="metric-val" style="color:var(--accent-green);">+1,585.8M</div>
+                </div>
+                <div class="metric-box">
+                    <div class="metric-title">US10Y Macro Yield</div>
+                    <div class="metric-val" style="color:var(--accent-red);">4.92% (Bearish)</div>
+                </div>
+            </div>
+
+            <div class="btn-group">
+                <a href="https://25bappkbsjnisr7.streamlit.app" target="_blank" class="btn btn-gold">Launch Live Dashboard</a>
+                <a href="https://t.me/" target="_blank" class="btn btn-outline">Join Telegram Radar</a>
+            </div>
+        </div>
+
+        <div class="card">
+            <h3 style="margin-top:0;">Mobile App & APK</h3>
+            <p style="font-size: 14px; color: var(--text-dim);">
+                Download the standalone Android build for 24/7 push-notifications, instant barrier proximity alarms, and background telemetry synchronization.
+            </p>
+            <a href="https://github.com/parfactmatch-cloud/gold-macro-dashboard/releases" class="btn btn-outline" style="display:block;">View Releases & Download APK</a>
+        </div>
+    </div>
+</body>
+</html>
+
