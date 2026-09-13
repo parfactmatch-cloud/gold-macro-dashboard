@@ -3,6 +3,7 @@ import requests
 import pandas as pd
 import numpy as np
 from datetime import datetime, timezone
+from free_gex_engine import GoldGEXEngine
 
 SCALP_LOG_FILE = "scalp_log.csv"
 
@@ -15,12 +16,39 @@ def get_structural_liquidity_levels(df_5m, lookback=20):
     liquidity_floor = float(recent_bars["low"].min())     # Sell-side Liquidity (Support)
     return liquidity_ceiling, liquidity_floor
 
+def check_gex_gatekeeper(direction: str, current_price: float, atr_14: float) -> tuple[bool, str, float]:
+    """
+    Blocks trades firing directly into dealer Gamma Walls.
+    Tolerance cushion is dynamic: max(0.5 * ATR, 1.50).
+    """
+    gex_data = GoldGEXEngine.read_cached_levels()
+    if gex_data.get("status") in ["FAILED", "NO_CACHE"]:
+        return True, "GEX_BYPASS_NO_CACHE", 0.0
+
+    call_wall = float(gex_data.get("call_wall_xau", float("inf")))
+    put_wall = float(gex_data.get("put_wall_xau", 0.0))
+    buffer_zone = max(0.5 * atr_14, 1.50)
+
+    # BUY Gate: Institutional Call Wall acts as dealer capping resistance
+    if direction == "BUY":
+        dist_to_call = call_wall - current_price
+        if 0 <= dist_to_call <= buffer_zone:
+            return False, f"BLOCKED_BY_CALL_WALL (Wall: {call_wall:.2f}, Cushion: {buffer_zone:.2f})", call_wall
+
+    # SHORT Gate: Institutional Put Wall acts as dealer support floor
+    elif direction == "SHORT":
+        dist_to_put = current_price - put_wall
+        if 0 <= dist_to_put <= buffer_zone:
+            return False, f"BLOCKED_BY_PUT_WALL (Wall: {put_wall:.2f}, Cushion: {buffer_zone:.2f})", put_wall
+
+    return True, "GEX_PERMITTED", 0.0
+
 def evaluate_dynamic_scalp(df_5m, spot_price, us10y_vector):
     """
     100% Dynamic Quant Engine:
     - Adapts dynamically to ATR volatility without hardcoded prices.
     - Resolves targets via Structural Liquidity Zones instead of arbitrary fixed multiples.
-    - Yield-driven directional gating and structural R:R enforcement (minimum 1:1.3).
+    - Yield-driven directional gating, structural R:R enforcement, and Institutional GEX gating.
     """
     if len(df_5m) < 30:
         return
@@ -73,6 +101,12 @@ def evaluate_dynamic_scalp(df_5m, spot_price, us10y_vector):
         rr = reward / risk if risk > 0 else 0
         
         if rr >= 1.30:
+            # GEX Put Wall Support Gatekeeper
+            gex_ok, gex_reason, _ = check_gex_gatekeeper("SHORT", spot_price, atr)
+            if not gex_ok:
+                print(f"[REJECTED] SHORT skipped: {gex_reason}")
+                return
+
             dispatch_execution("SHORT", spot_price, sl, tp, "VOLATILITY_EXHAUSTION_FADE")
             return
         else:
@@ -92,6 +126,12 @@ def evaluate_dynamic_scalp(df_5m, spot_price, us10y_vector):
         rr = reward / risk if risk > 0 else 0
 
         if rr >= 1.30:
+            # GEX Call Wall Resistance Gatekeeper
+            gex_ok, gex_reason, _ = check_gex_gatekeeper("BUY", spot_price, atr)
+            if not gex_ok:
+                print(f"[REJECTED] SWEEP BUY skipped: {gex_reason}")
+                return
+
             dispatch_execution("BUY", spot_price, sl, tp, "LIQUIDITY_ABSORPTION_SWEEP")
             return
         else:
@@ -109,6 +149,12 @@ def evaluate_dynamic_scalp(df_5m, spot_price, us10y_vector):
             rr = reward / risk if risk > 0 else 0
 
             if rr >= 1.30:
+                # GEX Call Wall Resistance Gatekeeper
+                gex_ok, gex_reason, _ = check_gex_gatekeeper("BUY", spot_price, atr)
+                if not gex_ok:
+                    print(f"[REJECTED] PULLBACK BUY skipped: {gex_reason}")
+                    return
+
                 dispatch_execution("BUY", spot_price, sl, tp, "TREND_EQUILIBRIUM_PULLBACK")
             else:
                 print(f"[REJECTED] PULLBACK BUY skipped: Ceiling at ${tp} chokes R:R ({rr:.2f} < 1.30).")
@@ -128,6 +174,11 @@ def dispatch_execution(side, spot, sl, tp, regime_tag):
     rr = round(reward / risk, 2) if risk > 0 else 0
     now_utc = datetime.now(timezone.utc).strftime("%H:%M:%S UTC")
 
+    # Read latest GEX metadata for the alert card
+    gex_data = GoldGEXEngine.read_cached_levels()
+    call_wall = gex_data.get("call_wall_xau", "N/A")
+    put_wall = gex_data.get("put_wall_xau", "N/A")
+
     icon = "⚡🟢 *DYNAMIC LONG*" if side == "BUY" else "⚡🔴 *DYNAMIC SHORT*"
     card = (
         f"{icon}\n"
@@ -138,6 +189,8 @@ def dispatch_execution(side, spot, sl, tp, regime_tag):
         f"━━━━━━━━━━━━━━━━━━━━━━━\n"
         f"🛑 *Structural SL*: `${sl:.2f}`\n"
         f"🎯 *Liquidity Target*: `${tp:.2f}`\n"
+        f"🛡️ *GEX Call Wall*: `${call_wall}`\n"
+        f"🛡️ *GEX Put Wall*: `${put_wall}`\n"
         f"⏰ *Epoch*: `{now_utc}`"
     )
     send_telegram_msg(card)
@@ -161,4 +214,4 @@ def send_telegram_msg(message: str):
             )
         except Exception as e:
             print(f"[TG ERROR] {e}")
-    
+            
