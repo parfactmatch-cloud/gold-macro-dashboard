@@ -30,6 +30,8 @@ jobs:
       - name: Run Macro & GEX Sync
         env:
           LSE_API_KEY: ${{ secrets.LSE_API_KEY }}
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
         run: python lse_sync.py
 
       - name: Commit & Push Updated Cache
