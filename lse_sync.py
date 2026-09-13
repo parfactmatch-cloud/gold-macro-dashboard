@@ -4,7 +4,7 @@ LSE Isolated Macro & Options GEX/DEX Sync Engine
 - Computes SPDR Gold Shares (GLD) dealer Gamma Walls, Net DEX & Blast Squeeze -> saves to 'gex_levels.json'
 - Multi-Source Spot Feed: CME Futures (GC=F) -> Stooq XAUUSD -> Binance PAXGUSDT -> GLD NAV
 - Regime-agnostic: Directly supports CME GC1! $4,400+ pricing without static baseline truncations
-- Periodic Radar Telemetry: Dispatches live DEX tilt & Gamma Blast squeeze status to Telegram
+- Periodic Radar Telemetry: Bulletproof HTML Telegram dispatch with plain-text fallback
 """
 
 import os
@@ -15,14 +15,97 @@ from datetime import datetime, timezone
 # GEX & DEX Engine Import (free_gex_engine.py must reside in the same execution path)
 from free_gex_engine import GoldGEXEngine
 
-# Telegram Engine Broadcast Import
+# Telegram Engine Broadcast Import with Fallback Handling
 try:
     from telegram_engine import broadcast_market_pulse
 except ImportError:
     broadcast_market_pulse = None
 
 LSE_API_KEY = os.getenv("LSE_API_KEY", "").strip()
+TELEGRAM_BOT_TOKEN = (
+    os.getenv("TELEGRAM_BOT_TOKEN", "") 
+    or os.getenv("BOT_TOKEN", "") 
+    or os.getenv("TG_BOT_TOKEN", "")
+).strip()
+TELEGRAM_CHAT_ID = (
+    os.getenv("TELEGRAM_CHAT_ID", "") 
+    or os.getenv("CHAT_ID", "") 
+    or os.getenv("TG_CHAT_ID", "")
+).strip()
 LSE_MACRO_FILE = "lse_macro.csv"
+
+def send_direct_telegram_pulse(spot: float, call_wall: float, put_wall: float, gamma_flip: float, regime: str, us10y_yield: float, us10y_impact: str, net_dex: float = 0.0, blast_active: bool = False):
+    """Direct, robust HTML Telegram dispatcher that prevents entity parse errors."""
+    print(f"[TG AUTH CHECK] Token configured: {bool(TELEGRAM_BOT_TOKEN)} | Chat ID configured: {bool(TELEGRAM_CHAT_ID)}")
+    if not TELEGRAM_BOT_TOKEN or not TELEGRAM_CHAT_ID:
+        print("[TG CRITICAL] TELEGRAM_BOT_TOKEN or TELEGRAM_CHAT_ID is missing from GitHub environment variables!")
+        return
+
+    now_utc = datetime.now(timezone.utc).strftime("%H:%M UTC | %d %b %Y")
+    dist_call = call_wall - spot
+    dist_put = spot - put_wall
+
+    if blast_active:
+        barrier_status = "🚀 <b>GAMMA BLAST REGIME</b>: High directional flow detected. Dealer walls in squeeze bypass mode."
+    elif 0 <= dist_call <= 5.0:
+        barrier_status = f"⚠️ <b>PROXIMITY WARNING</b>: Spot testing Call Wall (${call_wall:.2f}) [Distance: ${dist_call:.2f}]"
+    elif 0 <= dist_put <= 5.0:
+        barrier_status = f"⚠️ <b>PROXIMITY WARNING</b>: Spot testing Put Wall (${put_wall:.2f}) [Distance: ${dist_put:.2f}]"
+    else:
+        barrier_status = f"🟢 <b>CORRIDOR CLEAR</b>: Spot inside boundaries (Call: +${dist_call:.2f} | Put: -${dist_put:.2f})"
+
+    regime_tag = "🟩 LONG GAMMA (Mean-Reverting)" if "LONG_GAMMA" in regime else "🟥 SHORT GAMMA (Volatility Expansion)"
+    macro_icon = "🟢" if us10y_impact == "BULLISH_TAILWIND" else ("🔴" if us10y_impact == "BEARISH_PRESSURE" else "⚪")
+    dex_bias = "Dealer Net Long" if net_dex > 0 else ("Dealer Net Short" if net_dex < 0 else "Neutral")
+
+    html_card = (
+        f"📡 <b>INSTITUTIONAL MARKET RADAR PULSE</b>\n"
+        f"━━━━━━━━━━━━━━━━━━━━━━━\n"
+        f"💵 <b>Live Spot/Futures</b>: <code>${spot:.2f}</code>\n"
+        f"🏛 <b>US10Y Yield</b>: <code>{us10y_yield:.2f}%</code> {macro_icon} <code>{us10y_impact}</code>\n"
+        f"⚡ <b>Dealer Regime</b>: {regime_tag}\n"
+        f"⚖️ <b>Net Delta (DEX)</b>: <code>{net_dex:+.1f}M</code> ({dex_bias})\n"
+        f"━━━━━━━━━━━━━━━━━━━━━━━\n"
+        f"🧱 <b>Gamma Corridors</b>:\n"
+        f"• <b>Call Wall (Ceiling)</b>: <code>${call_wall:.2f}</code>\n"
+        f"• <b>Put Wall (Floor)</b>: <code>${put_wall:.2f}</code>\n"
+        f"• <b>Gamma Neutral Flip</b>: <code>${gamma_flip:.2f}</code>\n"
+        f"━━━━━━━━━━━━━━━━━━━━━━━\n"
+        f"🛡️ <b>Corridor Telemetry</b>:\n"
+        f"{barrier_status}\n"
+        f"⏰ <b>Synced</b>: <code>{now_utc}</code>"
+    )
+
+    url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
+
+    # Primary attempt: Safe HTML Parse Mode
+    try:
+        res = requests.post(url, json={"chat_id": TELEGRAM_CHAT_ID, "text": html_card, "parse_mode": "HTML"}, timeout=10)
+        if res.status_code == 200:
+            print("[PULSE SUCCESS] Institutional Market Radar Pulse delivered to Telegram (HTML).")
+            return
+        else:
+            print(f"[PULSE HTML FAILED] HTTP {res.status_code}: {res.text}. Trying fallback plain text...")
+    except Exception as e:
+        print(f"[PULSE NETWORK EXCEPTION] {e}")
+
+    # Fallback attempt: Clean Plain Text
+    try:
+        raw_text = (
+            f"📡 INSTITUTIONAL MARKET RADAR PULSE\n"
+            f"Spot: ${spot:.2f} | US10Y: {us10y_yield:.2f}% ({us10y_impact})\n"
+            f"Call Wall: ${call_wall:.2f} | Put Wall: ${put_wall:.2f} | Flip: ${gamma_flip:.2f}\n"
+            f"Net DEX: {net_dex:+.1f}M | Blast Active: {blast_active}\n"
+            f"Status: {barrier_status.replace('<b>','').replace('</b>','')}\n"
+            f"Synced: {now_utc}"
+        )
+        res2 = requests.post(url, json={"chat_id": TELEGRAM_CHAT_ID, "text": raw_text}, timeout=10)
+        if res2.status_code == 200:
+            print("[PULSE SUCCESS] Institutional Market Radar delivered via plain text fallback.")
+        else:
+            print(f"[PULSE HARD FAILURE] Telegram API rejected: {res2.status_code} - {res2.text}")
+    except Exception as e:
+        print(f"[PULSE CRITICAL ERROR] {e}")
 
 def fetch_lse_series(symbol="US10Y", limit=10):
     if not LSE_API_KEY:
@@ -169,24 +252,23 @@ def run_sync():
     spot_xau = fetch_live_gold_spot()
     gex_data = sync_gex(spot_price=spot_xau)
 
-    # 3. Periodic Market Radar Telemetry Dispatch with Net DEX & Squeeze Status
-    if broadcast_market_pulse and gex_data and gex_data.get("status") in ["HEALTHY", "FALLBACK_DEGRADED"]:
-        try:
-            broadcast_market_pulse(
-                spot=spot_xau,
-                call_wall=float(gex_data.get("call_wall_xau", 0.0)),
-                put_wall=float(gex_data.get("put_wall_xau", 0.0)),
-                gamma_flip=float(gex_data.get("gamma_flip_xau", 0.0)),
-                regime=str(gex_data.get("net_gamma_regime", "UNKNOWN")),
-                us10y_yield=latest_val,
-                us10y_impact=gold_macro_impact,
-                net_dex=float(gex_data.get("net_dex_m", 0.0)),
-                blast_active=bool(gex_data.get("gamma_blast_active", False))
-            )
-            print("[PULSE SUCCESS] Institutional Market Radar Pulse broadcasted to Telegram.")
-        except Exception as e:
-            print(f"[PULSE WARN] Could not dispatch pulse: {e}")
+    # 3. Guaranteed Periodic Market Radar Telemetry Dispatch
+    print("[PULSE DISPATCH] Initiating Telegram Pulse Trigger...")
+    if gex_data and gex_data.get("status") in ["HEALTHY", "FALLBACK_DEGRADED"]:
+        send_direct_telegram_pulse(
+            spot=spot_xau,
+            call_wall=float(gex_data.get("call_wall_xau", 0.0)),
+            put_wall=float(gex_data.get("put_wall_xau", 0.0)),
+            gamma_flip=float(gex_data.get("gamma_flip_xau", 0.0)),
+            regime=str(gex_data.get("net_gamma_regime", "UNKNOWN")),
+            us10y_yield=latest_val,
+            us10y_impact=gold_macro_impact,
+            net_dex=float(gex_data.get("net_dex_m", 0.0)),
+            blast_active=bool(gex_data.get("gamma_blast_active", False))
+        )
+    else:
+        print("[PULSE SKIPPED] GEX calculation payload degraded or missing.")
 
 if __name__ == "__main__":
     run_sync()
-                
+
