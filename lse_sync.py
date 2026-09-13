@@ -2,6 +2,7 @@
 LSE Isolated Macro & Options GEX Sync Engine
 - Fetches US10Y Bond Yields from London Strategic Edge API -> saves to 'lse_macro.csv'
 - Computes SPDR Gold Shares (GLD) dealer Gamma Walls & Flip -> saves to 'gex_levels.json'
+- Hybrid Spot Feed: Primary Binance PAXGUSDT -> Failover Stooq XAUUSD (Zero delisted/IP block warnings)
 """
 
 import os
@@ -42,17 +43,45 @@ def fetch_lse_series(symbol="US10Y", limit=10):
         return None
 
 def fetch_live_gold_spot() -> float:
-    """Fetches real-time Gold spot proxy for GLD basket conversion."""
+    """
+    Hybrid Spot Resolution:
+    1. Primary: Binance PAXGUSDT (24/7 liquid gold proxy, cloud-safe, sub-second)
+    2. Failover: Stooq Spot Gold XAUUSD (Traditional institutional quote, zero auth)
+    3. Baseline Anchor Fallback
+    """
+    # 1. Primary: Binance Order Tape
+    endpoints = [
+        "https://api.binance.com/api/v3/ticker/price?symbol=PAXGUSDT",
+        "https://data-api.binance.vision/api/v3/ticker/price?symbol=PAXGUSDT"
+    ]
+    for url in endpoints:
+        try:
+            res = requests.get(url, timeout=4)
+            if res.status_code == 200:
+                price = float(res.json().get("price", 0.0))
+                if price > 1000.0:
+                    print(f"[SPOT SUCCESS] Sourced via Binance PAXG: ${price:.2f}")
+                    return price
+        except Exception:
+            continue
+
+    # 2. Secondary Failover: Stooq.com Direct Spot CSV
     try:
-        import yfinance as yf
-        ticker = yf.Ticker("GC=F")
-        hist = ticker.history(period="1d")
-        if not hist.empty:
-            return float(hist["Close"].iloc[-1])
+        stooq_url = "https://stooq.com/q/l/?s=xauusd&f=sd2t2ohlcv&h&e=csv"
+        res = requests.get(stooq_url, headers={"User-Agent": "Mozilla/5.0"}, timeout=5)
+        if res.status_code == 200:
+            lines = res.text.strip().split("\n")
+            if len(lines) >= 2:
+                cols = lines[1].split(",")
+                close_val = float(cols[6])
+                if close_val > 1000.0:
+                    print(f"[SPOT SUCCESS] Sourced via Stooq XAUUSD: ${close_val:.2f}")
+                    return close_val
     except Exception as e:
-        print(f"[SPOT FETCH WARN] Yahoo Finance proxy failed: {e}")
-    
-    # Fallback to last recorded macro price or institutional baseline
+        print(f"[SPOT STOOQ SKIP] {e}")
+
+    # 3. Final Anchor
+    print("[SPOT WARN] Feeds unreachable. Defaulting to $2650.00 anchor baseline.")
     return 2650.0
 
 def sync_gex(spot_price: float):
