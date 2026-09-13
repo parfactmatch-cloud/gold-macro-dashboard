@@ -1,7 +1,7 @@
 """
 ===============================================================================
 SYSTEM: INSTITUTIONAL SYSTEMATIC MACRO & QUANT CONFLUENCE ENGINE (XAU/USD)
-METHODOLOGY: LSE YIELD VECTORS, DEALER GEX PROJECTION & STRUCTURAL R:R GATE
+METHODOLOGY: LSE YIELD VECTORS, DEALER GEX/DEX & GAMMA BLAST EXEMPTION GATE
 ROLE: PRODUCTION TELEMETRY & QUANT EXECUTION ENGINE
 ===============================================================================
 """
@@ -260,8 +260,8 @@ def compute_risk_envelope() -> Tuple[float, float, float, float, float, float]:
     df_1h = fetch_twelve_data("1h", 35)
     df_1d = fetch_twelve_data("1d", 30)
 
-    fallback_price = 2650.0
-    ema_50_1h = 2650.0
+    fallback_price = 4400.0
+    ema_50_1h = 4400.0
     atr_val = 8.50
 
     if df_1h is not None and len(df_1h) >= 15:
@@ -277,8 +277,8 @@ def compute_risk_envelope() -> Tuple[float, float, float, float, float, float]:
         rolling_atr = tr.rolling(VOLATILITY_LOOKBACK).mean().iloc[-1]
         atr_val = float(rolling_atr) if not np.isnan(rolling_atr) and rolling_atr > 0 else 8.50
 
-    ema_20_1d = 2640.0
-    pdh, pdl = 2670.0, 2630.0
+    ema_20_1d = 4380.0
+    pdh, pdl = 4450.0, 4350.0
     if df_1d is not None and len(df_1d) >= 20:
         c_1d = df_1d['close']
         ema_20_1d = float(c_1d.ewm(span=20, adjust=False).mean().iloc[-1])
@@ -303,14 +303,19 @@ def dispatch_telegram(message: str) -> bool:
         print(f"[TG ERROR] {e}")
         return False
 
-def broadcast_execution_card(side: str, spot: float, sl: float, tp: float, regime_tag: str, call_wall="N/A", put_wall="N/A") -> bool:
-    """Broadcasts valid quant executions with dynamic dealer GEX walls."""
+def broadcast_execution_card(side: str, spot: float, sl: float, tp: float, regime_tag: str, call_wall="N/A", put_wall="N/A", net_dex="N/A") -> bool:
+    """Broadcasts valid quant executions with dynamic dealer GEX/DEX context."""
     risk = abs(spot - sl)
     reward = abs(tp - spot)
     rr = round(reward / risk, 2) if risk > 0 else 0.0
     now_utc = datetime.now(timezone.utc).strftime("%H:%M:%S UTC")
 
-    icon = "⚡🟢 *QUANT LONG EXECUTION*" if side == "BUY" else "⚡🔴 *QUANT SHORT EXECUTION*"
+    is_blast = "GAMMA_BLAST" in regime_tag or "GAMMA_COLLAPSE" in regime_tag
+    if is_blast:
+        icon = "🚀🟢 *INSTITUTIONAL GAMMA BLAST (LONG)*" if side == "BUY" else "🚀🔴 *INSTITUTIONAL GAMMA COLLAPSE (SHORT)*"
+    else:
+        icon = "⚡🟢 *QUANT LONG EXECUTION*" if side == "BUY" else "⚡🔴 *QUANT SHORT EXECUTION*"
+
     card = (
         f"{icon}\n"
         f"━━━━━━━━━━━━━━━━━━━━━━━\n"
@@ -322,6 +327,7 @@ def broadcast_execution_card(side: str, spot: float, sl: float, tp: float, regim
         f"🎯 *Liquidity Target*: `${tp:.2f}`\n"
         f"🛡️ *Dealer Call Wall*: `${call_wall}`\n"
         f"🛡️ *Dealer Put Wall*: `${put_wall}`\n"
+        f"⚖️ *Net Delta (DEX)*: `{net_dex}`\n"
         f"⏰ *Epoch*: `{now_utc}`"
     )
     return dispatch_telegram(card)
@@ -358,6 +364,49 @@ def broadcast_weekly_summary(metrics: dict) -> bool:
     )
     return dispatch_telegram(msg)
 
+def broadcast_market_pulse(spot: float, call_wall: float, put_wall: float, gamma_flip: float, regime: str, us10y_yield: float, us10y_impact: str, net_dex: float = 0.0, blast_active: bool = False) -> bool:
+    """
+    Broadcasts periodic institutional telemetry even when NO trades are triggered.
+    Includes Net Delta (DEX) & Gamma Blast Squeeze status.
+    """
+    now_utc = datetime.now(timezone.utc).strftime("%H:%M UTC | %d %b %Y")
+    
+    dist_call = call_wall - spot
+    dist_put = spot - put_wall
+    
+    # Proximity & Gatekeeper Assessment
+    if blast_active:
+        barrier_status = f"🚀 *GAMMA BLAST REGIME*: High directional flow detected. Dealer walls in squeeze bypass mode."
+    elif 0 <= dist_call <= 5.0:
+        barrier_status = f"⚠️ *PROXIMITY WARNING*: Spot testing Call Wall (${call_wall:.2f}) [Distance: ${dist_call:.2f}]"
+    elif 0 <= dist_put <= 5.0:
+        barrier_status = f"⚠️ *PROXIMITY WARNING*: Spot testing Put Wall (${put_wall:.2f}) [Distance: ${dist_put:.2f}]"
+    else:
+        barrier_status = f"🟢 *CORRIDOR CLEAR*: Spot inside boundaries (Call: +${dist_call:.2f} | Put: -${dist_put:.2f})"
+
+    regime_tag = "🟩 LONG GAMMA (Mean-Reverting)" if "LONG_GAMMA" in regime else "🟥 SHORT GAMMA (Volatility Expansion)"
+    macro_icon = "🟢" if us10y_impact == "BULLISH_TAILWIND" else ("🔴" if us10y_impact == "BEARISH_PRESSURE" else "⚪")
+    dex_bias = "🟢 Dealer Net Long" if net_dex > 0 else ("🔴 Dealer Net Short" if net_dex < 0 else "⚪ Neutral")
+
+    pulse_card = (
+        f"📡 *INSTITUTIONAL MARKET RADAR PULSE*\n"
+        f"━━━━━━━━━━━━━━━━━━━━━━━\n"
+        f"💵 *Live Spot/Futures*: `${spot:.2f}`\n"
+        f"🏛 *US10Y Yield*: `{us10y_yield:.2f}%` {macro_icon} `{us10y_impact}`\n"
+        f"⚡ *Dealer Regime*: {regime_tag}\n"
+        f"⚖️ *Net Delta (DEX)*: `{net_dex:+.1f}M` ({dex_bias})\n"
+        f"━━━━━━━━━━━━━━━━━━━━━━━\n"
+        f"🧱 *Gamma Corridors*:\n"
+        f"• *Call Wall (Ceiling)*: `${call_wall:.2f}`\n"
+        f"• *Put Wall (Floor)*: `${put_wall:.2f}`\n"
+        f"• *Gamma Neutral Flip*: `${gamma_flip:.2f}`\n"
+        f"━━━━━━━━━━━━━━━━━━━━━━━\n"
+        f"🛡️ *Corridor Telemetry*:\n"
+        f"{barrier_status}\n"
+        f"⏰ *Synced*: `{now_utc}`"
+    )
+    return dispatch_telegram(pulse_card)
+
 def is_duplicate_order(signal: str, price: float) -> bool:
     if not os.path.exists(TRADE_LOG_FILE):
         return False
@@ -384,10 +433,12 @@ def execute_systematic_pipeline():
     confluence_active, conf_type, matrix = compute_mtf_fractals(spot)
     session_active = (7 <= datetime.now(timezone.utc).hour <= 18)
 
-    # 1. Pull Institutional Options GEX Boundaries
+    # 1. Pull Institutional Options GEX & DEX Boundaries
     gex_data = GoldGEXEngine.read_cached_levels()
     call_wall = float(gex_data.get("call_wall_xau", float("inf")))
     put_wall = float(gex_data.get("put_wall_xau", 0.0))
+    net_dex = float(gex_data.get("net_dex_m", 0.0))
+    gamma_blast_allowed = bool(gex_data.get("gamma_blast_active", False))
     gex_cushion = max(0.5 * atr_1h, 2.0)
 
     signal = "NEUTRAL"
@@ -397,7 +448,7 @@ def execute_systematic_pipeline():
     spread_buffer = 2.50
     risk_unit = round(atr_1h * DYNAMIC_ATR_MULTIPLIER, 2)
 
-    # Quantitative Decision Gate
+    # Quantitative Decision Gate with Gamma Blast Exemption
     if session_active:
         if composite_alpha >= ALPHA_THRESHOLD_LONG and spot > ema_50_1h and spot > ema_20_1d:
             if confluence_active and conf_type == "BULLISH_EXHAUSTION" and dom_ratio >= DOM_ASYMMETRY_BID_MIN:
@@ -405,76 +456,14 @@ def execute_systematic_pipeline():
                 target_tp = round(max(pdh, spot + (risk_unit * 2.0) + spread_buffer), 2)
                 offered_rr = (target_tp - spot) / (spot - target_sl) if (spot - target_sl) > 0 else 0
 
-                # Gatekeeper 1: GEX Call Wall Resistance Proximity
-                if 0 <= (call_wall - spot) <= gex_cushion:
-                    broadcast_gatekeeper_rejection(
-                        reason=f"Near Dealer Call Wall ({call_wall:.2f})",
-                        strategy="MTF_QUANT_LONG",
-                        offered_rr=offered_rr,
-                        barrier=f"${call_wall:.2f}"
-                    )
-                # Gatekeeper 2: Minimum R:R Threshold
-                elif offered_rr < MIN_RR_THRESHOLD:
-                    broadcast_gatekeeper_rejection(
-                        reason=f"Offered R:R {offered_rr:.2f} < {MIN_RR_THRESHOLD:.2f}",
-                        strategy="MTF_QUANT_LONG",
-                        offered_rr=offered_rr
-                    )
-                else:
+                near_call_wall = 0 <= (call_wall - spot) <= gex_cushion
+
+                # Gamma Blast Exemption Check for BUY
+                if near_call_wall and (gamma_blast_allowed or (net_dex > 10.0 and composite_alpha >= 5.0)):
                     signal = "BUY"
-                    conviction = "INSTITUTIONAL QUANT CONFLUENCE"
+                    conviction = "GAMMA_BLAST_LONG_SQUEEZE"
                     sl = target_sl
-                    tp = target_tp
+                    tp = round(spot + (risk_unit * 3.0), 2)
                     be = round(spot + risk_unit, 2)
-
-        elif composite_alpha <= ALPHA_THRESHOLD_SHORT and spot < ema_50_1h and spot < ema_20_1d:
-            if confluence_active and conf_type == "BEARISH_EXHAUSTION" and dom_ratio <= DOM_ASYMMETRY_ASK_MAX:
-                target_sl = round(spot + (risk_unit + spread_buffer), 2)
-                target_tp = round(min(pdl, spot - (risk_unit * 2.0) - spread_buffer), 2)
-                offered_rr = (spot - target_tp) / (target_sl - spot) if (target_sl - spot) > 0 else 0
-
-                # Gatekeeper 1: GEX Put Wall Support Proximity
-                if 0 <= (spot - put_wall) <= gex_cushion:
-                    broadcast_gatekeeper_rejection(
-                        reason=f"Near Dealer Put Wall ({put_wall:.2f})",
-                        strategy="MTF_QUANT_SHORT",
-                        offered_rr=offered_rr,
-                        barrier=f"${put_wall:.2f}"
-                    )
-                # Gatekeeper 2: Minimum R:R Threshold
-                elif offered_rr < MIN_RR_THRESHOLD:
-                    broadcast_gatekeeper_rejection(
-                        reason=f"Offered R:R {offered_rr:.2f} < {MIN_RR_THRESHOLD:.2f}",
-                        strategy="MTF_QUANT_SHORT",
-                        offered_rr=offered_rr
-                    )
-                else:
-                    signal = "SELL"
-                    conviction = "INSTITUTIONAL QUANT CONFLUENCE"
-                    sl = target_sl
-                    tp = target_tp
-                    be = round(spot - risk_unit, 2)
-
-    is_duplicate = is_duplicate_order(signal, spot) if signal in ["BUY", "SELL"] else False
-
-    # Persist Structured State
-    payload = pd.DataFrame([{
-        "Timestamp": datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC"),
-        "Price": spot,
-        "EMA_50_1H": ema_50_1h,
-        "EMA_20_1D": ema_20_1d,
-        "PDH": pdh,
-        "PDL": pdl,
-        "ATR_1H": atr_1h,
-        "Call_Wall": call_wall,
-        "Put_Wall": put_wall,
-        "Composite_Alpha": composite_alpha,
-        "DOM_Ratio": dom_ratio,
-        "Signal": signal if not is_duplicate else "NEUTRAL_DUPLICATE_SUPPRESSED",
-        "Conviction": conviction,
-        "SL": sl,
-        "TP": tp,
-        "Breakeven": be
-    }])
-
-    if os.path.exis
+                elif near_call_wall:
+                    broadcast_gate
