@@ -1,8 +1,8 @@
 """
 ===============================================================================
-SYSTEM: INSTITUTIONAL SYSTEMATIC MACRO & MTF CONFLUENCE ENGINE (XAU/USD)
-METHODOLOGY: CROSS-ASSET TELEMETRY, FRACTAL EQUILIBRIUM & ASYMMETRIC DOM SKEW
-ROLE: PRODUCTION QUANT EXECUTION ENGINE
+SYSTEM: INSTITUTIONAL SYSTEMATIC MACRO & QUANT CONFLUENCE ENGINE (XAU/USD)
+METHODOLOGY: LSE YIELD VECTORS, DEALER GEX PROJECTION & STRUCTURAL R:R GATE
+ROLE: PRODUCTION TELEMETRY & QUANT EXECUTION ENGINE
 ===============================================================================
 """
 
@@ -10,10 +10,12 @@ import os
 import requests
 import numpy as np
 import pandas as pd
-import yfinance as yf
 from datetime import datetime, timezone
 from fredapi import Fred
 from typing import Dict, Tuple, Optional, Any
+
+# GEX Integration Layer
+from free_gex_engine import GoldGEXEngine
 
 # ================= 1. SYSTEM PARAMETERS & CONFIGURATION =================
 FRED_API_KEY = os.getenv("FRED_API_KEY", "").strip()
@@ -23,6 +25,7 @@ TWELVE_DATA_API_KEY = os.getenv("TWELVE_DATA_API_KEY", "").strip()
 LSE_API_KEY = os.getenv("LSE_API_KEY", "").strip()
 
 TRADE_LOG_FILE = "trade_log.csv"
+SCALP_LOG_FILE = "scalp_log.csv"
 LSE_MACRO_FILE = "lse_macro.csv"
 
 # Systematic Decision Hyperparameters
@@ -33,6 +36,7 @@ DOM_ASYMMETRY_ASK_MAX = 0.80
 VOLATILITY_LOOKBACK = 14
 DYNAMIC_ATR_MULTIPLIER = 1.25
 CONFLUENCE_EQUILIBRIUM_TOLERANCE = 3.0
+MIN_RR_THRESHOLD = 1.30
 
 # ================= 2. DATA INGESTION MATRIX =================
 def fetch_twelve_data(interval: str = "1h", outputsize: int = 30) -> Optional[pd.DataFrame]:
@@ -165,10 +169,6 @@ def evaluate_lse_bond_telemetry() -> Tuple[float, float, float, str]:
 
 # ================= 5. SYSTEMIC MACRO STATE AGGREGATOR =================
 def compute_macro_vector() -> Tuple[float, Dict[str, Any]]:
-    """
-    Aggregates orthogonal macro predictors:
-    Macro Alpha = S_tips + S_fed_liq + S_dxy + S_lse_yield
-    """
     total_alpha = 0.0
     telemetry = {}
 
@@ -221,7 +221,6 @@ def compute_mtf_fractals(c_price: float) -> Tuple[bool, str, Dict[str, float]]:
     if any(x is None or len(x) < 8 for x in [gold_1h, gold_30m, gold_15m, gold_5m]):
         return False, "NONE", levels
 
-    # 50% Mean Reversion Coordinates
     h_1h, l_1h = float(gold_1h['high'].tail(24).max()), float(gold_1h['low'].tail(24).min())
     eq_1h = round((h_1h + l_1h) / 2.0, 2)
 
@@ -231,7 +230,6 @@ def compute_mtf_fractals(c_price: float) -> Tuple[bool, str, Dict[str, float]]:
     levels["1H_50"] = eq_1h
     levels["30M_50"] = eq_30m
 
-    # Micro Tail-Risk Exhaustion Bounds (Asymmetric 4X Range Expansion)
     r_15m = max(float(abs(gold_15m['high'].iloc[-4] - gold_15m['low'].iloc[-4])), 2.0)
     levels["15M_4X_Down"] = round(h_1h - (r_15m * 4.0), 2)
     levels["15M_4X_Up"] = round(l_1h + (r_15m * 4.0), 2)
@@ -240,7 +238,6 @@ def compute_mtf_fractals(c_price: float) -> Tuple[bool, str, Dict[str, float]]:
     levels["5M_4X_Down"] = round(h_1h - (r_5m * 4.0), 2)
     levels["5M_4X_Up"] = round(l_1h + (r_5m * 4.0), 2)
 
-    # Confluence Discrimination
     bullish_exhaustion = (
         (abs(eq_1h - levels["15M_4X_Down"]) <= 3.5 or abs(eq_1h - levels["5M_4X_Down"]) <= 2.5 or abs(eq_30m - levels["5M_4X_Down"]) <= 2.0)
         and (abs(c_price - eq_1h) <= CONFLUENCE_EQUILIBRIUM_TOLERANCE or abs(c_price - eq_30m) <= 2.0)
@@ -290,14 +287,76 @@ def compute_risk_envelope() -> Tuple[float, float, float, float, float, float]:
 
     return fallback_price, ema_50_1h, ema_20_1d, pdh, pdl, round(atr_val, 2)
 
-# ================= 8. AUDIT & DISPATCH =================
-def dispatch_telegram(message: str):
-    if TELEGRAM_BOT_TOKEN and TELEGRAM_CHAT_ID:
-        requests.post(
+# ================= 8. TELEGRAM TELEMETRY BROADCASTERS =================
+def dispatch_telegram(message: str) -> bool:
+    if not TELEGRAM_BOT_TOKEN or not TELEGRAM_CHAT_ID:
+        print("[TG WARN] Credentials missing.")
+        return False
+    try:
+        res = requests.post(
             f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage",
             json={"chat_id": TELEGRAM_CHAT_ID, "text": message, "parse_mode": "Markdown"},
             timeout=10
         )
+        return res.status_code == 200
+    except Exception as e:
+        print(f"[TG ERROR] {e}")
+        return False
+
+def broadcast_execution_card(side: str, spot: float, sl: float, tp: float, regime_tag: str, call_wall="N/A", put_wall="N/A") -> bool:
+    """Broadcasts valid quant executions with dynamic dealer GEX walls."""
+    risk = abs(spot - sl)
+    reward = abs(tp - spot)
+    rr = round(reward / risk, 2) if risk > 0 else 0.0
+    now_utc = datetime.now(timezone.utc).strftime("%H:%M:%S UTC")
+
+    icon = "⚡🟢 *QUANT LONG EXECUTION*" if side == "BUY" else "⚡🔴 *QUANT SHORT EXECUTION*"
+    card = (
+        f"{icon}\n"
+        f"━━━━━━━━━━━━━━━━━━━━━━━\n"
+        f"🏷 *Model*: `{regime_tag}`\n"
+        f"💵 *Entry Spot*: `${spot:.2f}`\n"
+        f"📐 *Profile*: `Risk: ${risk:.2f} | Target: ${reward:.2f} (1:{rr})`\n"
+        f"━━━━━━━━━━━━━━━━━━━━━━━\n"
+        f"🛑 *Structural SL*: `${sl:.2f}`\n"
+        f"🎯 *Liquidity Target*: `${tp:.2f}`\n"
+        f"🛡️ *Dealer Call Wall*: `${call_wall}`\n"
+        f"🛡️ *Dealer Put Wall*: `${put_wall}`\n"
+        f"⏰ *Epoch*: `{now_utc}`"
+    )
+    return dispatch_telegram(card)
+
+def broadcast_gatekeeper_rejection(reason: str, strategy: str, offered_rr: float, barrier="NONE") -> bool:
+    """Broadcasts gatekeeper rejections (Low R:R or Options GEX barriers)."""
+    now_utc = datetime.now(timezone.utc).strftime("%H:%M:%S UTC")
+    msg = (
+        f"🛑 *GATEKEEPER REJECTION*\n"
+        f"━━━━━━━━━━━━━━━━━━━━━━━\n"
+        f"• *Strategy*: `{strategy}`\n"
+        f"• *Block Reason*: `{reason}`\n"
+        f"• *Offered R:R*: `1:{offered_rr:.2f}` (Min: 1:1.30)\n"
+        f"• *GEX Barrier*: `{barrier}`\n"
+        f"• *Timestamp*: `{now_utc}`\n"
+        f"━━━━━━━━━━━━━━━━━━━━━━━\n"
+        f"⚡ *Verdict*: Capital Protected"
+    )
+    return dispatch_telegram(msg)
+
+def broadcast_weekly_summary(metrics: dict) -> bool:
+    """Broadcasts rolling 7-day performance metrics."""
+    msg = (
+        f"📋 *7-DAY ROLLING AUDIT REPORT*\n"
+        f"━━━━━━━━━━━━━━━━━━━━━━━\n"
+        f"• *Total Setups*: `{metrics.get('total_trades', 0)}`\n"
+        f"• *Win Rate*: `{metrics.get('win_rate', 0.0):.1f}%` ({metrics.get('wins', 0)}W / {metrics.get('losses', 0)}L)\n"
+        f"• *Profit Factor*: `{metrics.get('profit_factor', 0.0):.2f}`\n"
+        f"• *Net PnL*: `{metrics.get('net_pnl', 0.0):+.2f} USD`\n"
+        f"• *Max Drawdown*: `{metrics.get('max_drawdown', 0.0):.2f}%`\n"
+        f"• *Blocked Setups*: `{metrics.get('rejected_count', 0)}`\n"
+        f"━━━━━━━━━━━━━━━━━━━━━━━\n"
+        f"⚡ *Pipeline Status*: Production Active"
+    )
+    return dispatch_telegram(msg)
 
 def is_duplicate_order(signal: str, price: float) -> bool:
     if not os.path.exists(TRADE_LOG_FILE):
@@ -325,6 +384,12 @@ def execute_systematic_pipeline():
     confluence_active, conf_type, matrix = compute_mtf_fractals(spot)
     session_active = (7 <= datetime.now(timezone.utc).hour <= 18)
 
+    # 1. Pull Institutional Options GEX Boundaries
+    gex_data = GoldGEXEngine.read_cached_levels()
+    call_wall = float(gex_data.get("call_wall_xau", float("inf")))
+    put_wall = float(gex_data.get("put_wall_xau", 0.0))
+    gex_cushion = max(0.5 * atr_1h, 2.0)
+
     signal = "NEUTRAL"
     sl, tp, be = None, None, None
     conviction = "EQUILIBRIUM"
@@ -336,19 +401,59 @@ def execute_systematic_pipeline():
     if session_active:
         if composite_alpha >= ALPHA_THRESHOLD_LONG and spot > ema_50_1h and spot > ema_20_1d:
             if confluence_active and conf_type == "BULLISH_EXHAUSTION" and dom_ratio >= DOM_ASYMMETRY_BID_MIN:
-                signal = "BUY"
-                conviction = "INSTITUTIONAL QUANT CONFLUENCE"
-                sl = round(spot - (risk_unit + spread_buffer), 2)
-                tp = round(max(pdh, spot + (risk_unit * 2.0) + spread_buffer), 2)
-                be = round(spot + risk_unit, 2)
+                target_sl = round(spot - (risk_unit + spread_buffer), 2)
+                target_tp = round(max(pdh, spot + (risk_unit * 2.0) + spread_buffer), 2)
+                offered_rr = (target_tp - spot) / (spot - target_sl) if (spot - target_sl) > 0 else 0
+
+                # Gatekeeper 1: GEX Call Wall Resistance Proximity
+                if 0 <= (call_wall - spot) <= gex_cushion:
+                    broadcast_gatekeeper_rejection(
+                        reason=f"Near Dealer Call Wall ({call_wall:.2f})",
+                        strategy="MTF_QUANT_LONG",
+                        offered_rr=offered_rr,
+                        barrier=f"${call_wall:.2f}"
+                    )
+                # Gatekeeper 2: Minimum R:R Threshold
+                elif offered_rr < MIN_RR_THRESHOLD:
+                    broadcast_gatekeeper_rejection(
+                        reason=f"Offered R:R {offered_rr:.2f} < {MIN_RR_THRESHOLD:.2f}",
+                        strategy="MTF_QUANT_LONG",
+                        offered_rr=offered_rr
+                    )
+                else:
+                    signal = "BUY"
+                    conviction = "INSTITUTIONAL QUANT CONFLUENCE"
+                    sl = target_sl
+                    tp = target_tp
+                    be = round(spot + risk_unit, 2)
 
         elif composite_alpha <= ALPHA_THRESHOLD_SHORT and spot < ema_50_1h and spot < ema_20_1d:
             if confluence_active and conf_type == "BEARISH_EXHAUSTION" and dom_ratio <= DOM_ASYMMETRY_ASK_MAX:
-                signal = "SELL"
-                conviction = "INSTITUTIONAL QUANT CONFLUENCE"
-                sl = round(spot + (risk_unit + spread_buffer), 2)
-                tp = round(min(pdl, spot - (risk_unit * 2.0) - spread_buffer), 2)
-                be = round(spot - risk_unit, 2)
+                target_sl = round(spot + (risk_unit + spread_buffer), 2)
+                target_tp = round(min(pdl, spot - (risk_unit * 2.0) - spread_buffer), 2)
+                offered_rr = (spot - target_tp) / (target_sl - spot) if (target_sl - spot) > 0 else 0
+
+                # Gatekeeper 1: GEX Put Wall Support Proximity
+                if 0 <= (spot - put_wall) <= gex_cushion:
+                    broadcast_gatekeeper_rejection(
+                        reason=f"Near Dealer Put Wall ({put_wall:.2f})",
+                        strategy="MTF_QUANT_SHORT",
+                        offered_rr=offered_rr,
+                        barrier=f"${put_wall:.2f}"
+                    )
+                # Gatekeeper 2: Minimum R:R Threshold
+                elif offered_rr < MIN_RR_THRESHOLD:
+                    broadcast_gatekeeper_rejection(
+                        reason=f"Offered R:R {offered_rr:.2f} < {MIN_RR_THRESHOLD:.2f}",
+                        strategy="MTF_QUANT_SHORT",
+                        offered_rr=offered_rr
+                    )
+                else:
+                    signal = "SELL"
+                    conviction = "INSTITUTIONAL QUANT CONFLUENCE"
+                    sl = target_sl
+                    tp = target_tp
+                    be = round(spot - risk_unit, 2)
 
     is_duplicate = is_duplicate_order(signal, spot) if signal in ["BUY", "SELL"] else False
 
@@ -361,6 +466,8 @@ def execute_systematic_pipeline():
         "PDH": pdh,
         "PDL": pdl,
         "ATR_1H": atr_1h,
+        "Call_Wall": call_wall,
+        "Put_Wall": put_wall,
         "Composite_Alpha": composite_alpha,
         "DOM_Ratio": dom_ratio,
         "Signal": signal if not is_duplicate else "NEUTRAL_DUPLICATE_SUPPRESSED",
@@ -370,47 +477,4 @@ def execute_systematic_pipeline():
         "Breakeven": be
     }])
 
-    if os.path.exists(TRADE_LOG_FILE):
-        payload.to_csv(TRADE_LOG_FILE, mode='a', header=False, index=False)
-    else:
-        payload.to_csv(TRADE_LOG_FILE, index=False)
-
-    # Telegram Signal Telemetry
-    if signal in ["BUY", "SELL"] and not is_duplicate:
-        icon = "🟢" if signal == "BUY" else "🔴"
-        target_projection = matrix.get('5M_4X_Down', 0.0) if signal == "BUY" else matrix.get('5M_4X_Up', 0.0)
-        lse_data = macro_telemetry.get("LSE_US10Y", {})
-        yield_str = f"{lse_data.get('yield', 0.0):.2f}% ({lse_data.get('impact', 'NEUTRAL')})"
-
-        card = f"""
-{icon} *QUANTITATIVE ALPHA ALERT: {signal}*
-⚡ *Conviction Level:* `{conviction}`
-
-📊 *Composite Alpha Score:* `{composite_alpha:+0.1f}` | *DOM Skew:* `{dom_ratio:.2f}`
-🏛 *LSE US10Y Telemetry:* `{yield_str}`
-📈 *Execution Spot:* `${spot:.2f}`
-🏛 *Systemic Trend Filters:* `1H EMA50: ${ema_50_1h:.2f}` | `1D EMA20: ${ema_20_1d:.2f}`
-🎯 *PDH:* `${pdh:.2f}` | *PDL:* `${pdl:.2f}` | *1H ATR:* `${atr_1h:.2f}`
-
-🏛 *Fractal Equilibrium Metrics:*
-• *1H 50% Mean-Reversion:* `${matrix.get('1H_50', 0.0):.2f}`
-• *30M Equilibrium Band:* `${matrix.get('30M_50', 0.0):.2f}`
-• *Micro 4X Projection:* `${target_projection:.2f}`
-• *DOM Absorption Ratio:* `{dom_ratio:.2f}`
-
-💼 *Parametric Risk Envelope:*
-• *Entry:* `${spot:.2f}`
-• *Stop Loss (1.0R):* `${sl:.2f}` (Volatility ATR-Buffered)
-• *Target (2.0R):* `${tp:.2f}` (Structural Liquidity Pool)
-• *Breakeven Trigger:* `${be:.2f}` (+1.0R Vector Move)
-
-_System: Institutional Multi-Timeframe Alignment + LSE Yield Dynamics_
-"""
-        dispatch_telegram(card)
-        print(f"[SYSTEMIC_DISPATCH] {signal} executed at ${spot:.2f} | Alpha: {composite_alpha:+0.1f}")
-    else:
-        print(f"[EQUILIBRIUM_STATE] Alpha: {composite_alpha:+0.1f} | Skew: {dom_ratio:.2f} | Spot: ${spot:.2f} | Gate: {'OPEN' if session_active else 'SESSION_LOCKED'}")
-
-if __name__ == "__main__":
-    execute_systematic_pipeline()
-    
+    if os.path.exis
