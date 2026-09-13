@@ -21,20 +21,28 @@ jobs:
       - name: Install Dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install --upgrade --no-cache-dir requests pandas numpy yfinance curl_cffi fredapi
+          pip install --upgrade --no-cache-dir requests pandas numpy scipy yfinance curl_cffi fredapi
 
-      - name: Run Engine Script
+      - name: Run Macro & GEX Sync (Sends Radar Pulse)
+        env:
+          LSE_API_KEY: ${{ secrets.LSE_API_KEY }}
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+        run: python lse_sync.py
+
+      - name: Run Signal Arbitration Engine
         env:
           TWELVE_DATA_API_KEY: ${{ secrets.TWELVE_DATA_API_KEY }}
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
           FRED_API_KEY: ${{ secrets.FRED_API_KEY }}
+          LSE_API_KEY: ${{ secrets.LSE_API_KEY }}
         run: python telegram_engine.py
 
-      - name: Commit and Push Trade Log
+      - name: Commit and Push Updated Cache & Logs
         run: |
           git config --global user.name "github-actions[bot]"
           git config --global user.email "github-actions[bot]@users.noreply.github.com"
-          git add trade_log.csv || true
-          git diff --quiet && git diff --staged --quiet || (git commit -m "Auto-update trade log [skip ci]" && git push)
+          git add trade_log.csv gex_levels.json lse_macro.csv || true
+          git diff --quiet && git diff --staged --quiet || (git commit -m "Auto-update quant cache & logs [skip ci]" && git push)
           
