@@ -8,7 +8,6 @@
     <link rel="manifest" href="manifest.json">
     <meta name="theme-color" content="#06080d">
     <meta name="apple-mobile-web-app-capable" content="yes">
-    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -32,66 +31,66 @@
             --mono: 'JetBrains Mono', monospace;
         }
 
-        * { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
+        * { box-sizing: border-box; margin: 0; padding: 0; }
         body {
             background: var(--bg);
             color: var(--text);
             font-family: var(--font);
-            padding-bottom: 60px;
+            padding-bottom: 50px;
         }
 
         /* Top Header */
         header {
-            position: sticky; top: 0; z-index: 999;
-            background: rgba(7, 9, 14, 0.98);
-            backdrop-filter: blur(10px);
+            position: sticky; top: 0; z-index: 1000;
+            background: #07090e;
             border-bottom: 1px solid var(--border);
             padding: 10px 14px;
             display: flex; justify-content: space-between; align-items: center;
         }
-        .brand { font-weight: 800; font-size: 15px; font-family: var(--font); }
+        .brand { font-weight: 800; font-size: 15px; }
         .brand span { color: var(--gold); }
-        .sync-badge {
-            background: rgba(16, 185, 129, 0.12);
-            color: var(--green);
-            font-family: var(--mono);
-            font-size: 10px;
-            padding: 4px 8px;
-            border-radius: 20px;
-            border: 1px solid rgba(16, 185, 129, 0.3);
+        .badge {
+            background: rgba(16, 185, 129, 0.12); color: var(--green);
+            font-family: var(--mono); font-size: 10px; padding: 4px 8px;
+            border-radius: 20px; border: 1px solid rgba(16, 185, 129, 0.3);
         }
 
-        /* Horizontal Tab Bar */
-        .tab-bar-wrap {
-            position: sticky; top: 46px; z-index: 998;
+        /* Direct Native Tab Bar */
+        .tab-bar {
+            position: sticky; top: 45px; z-index: 999;
             background: #0a0e17;
             border-bottom: 1px solid var(--border);
+            display: flex;
             overflow-x: auto;
             white-space: nowrap;
-            padding: 6px 10px;
+            padding: 6px 8px;
+            gap: 6px;
+            touch-action: pan-x;
         }
-        .tab-btn {
-            background: transparent;
-            border: none;
-            outline: none;
+        .tab-item {
+            background: var(--surface-1);
+            border: 1px solid var(--border);
             color: var(--muted);
             font-size: 12px;
             font-weight: 700;
             padding: 8px 14px;
             border-radius: 6px;
             cursor: pointer;
-            margin-right: 4px;
-            display: inline-block;
+            user-select: none;
+            flex-shrink: 0;
+            display: inline-flex;
+            align-items: center;
+            gap: 4px;
         }
-        .tab-btn.active {
+        .tab-item.active {
             background: var(--surface-2);
             color: var(--gold-bright);
-            border: 1px solid rgba(245, 158, 11, 0.35);
+            border: 1px solid var(--gold);
         }
 
         .main-wrapper { max-width: 1200px; margin: 0 auto; padding: 12px; }
 
-        /* Metrics Strip */
+        /* Metric Strip */
         .stats-grid {
             display: grid; grid-template-columns: repeat(2, 1fr);
             gap: 10px; margin-bottom: 14px;
@@ -110,46 +109,44 @@
             color: var(--dim); text-transform: uppercase;
             display: flex; justify-content: space-between;
         }
-        .stat-val {
-            font-size: 20px; font-weight: 800; font-family: var(--mono);
-            margin: 4px 0 2px;
-        }
+        .stat-val { font-size: 20px; font-weight: 800; font-family: var(--mono); margin: 4px 0 2px; }
         .stat-sub { font-size: 11px; font-weight: 600; }
 
-        /* Section Container */
-        .section-box {
+        /* Sections */
+        .module-card {
             background: var(--surface-1);
             border: 1px solid var(--border);
             border-radius: 12px;
             padding: 14px;
             margin-bottom: 14px;
         }
-        .section-hdr {
+        .module-hdr {
             font-size: 12px; font-family: var(--mono); font-weight: 700;
             color: var(--muted); text-transform: uppercase;
             margin-bottom: 10px;
             display: flex; justify-content: space-between; align-items: center;
         }
 
-        /* Buttons */
-        .btn-act {
+        /* Action Buttons */
+        .action-btn {
             display: block; width: 100%; text-align: center;
-            padding: 12px; border-radius: 8px; font-weight: 700; font-size: 12.5px;
+            padding: 13px; border-radius: 8px; font-weight: 700; font-size: 13px;
             text-decoration: none; cursor: pointer; border: none; font-family: var(--font);
-            margin-bottom: 8px;
+            margin-bottom: 8px; user-select: none;
         }
-        .btn-primary { background: linear-gradient(135deg, var(--gold), #d97706); color: #000; }
-        .btn-secondary { background: var(--surface-2); border: 1px solid var(--border); color: var(--text); }
+        .btn-gold { background: linear-gradient(135deg, var(--gold), #d97706); color: #000; }
+        .btn-glass { background: var(--surface-2); border: 1px solid var(--border); color: var(--text); }
+        .btn-synthesis { background: rgba(245, 158, 11, 0.1); border: 1px solid var(--gold); color: var(--gold-bright); }
 
         /* Corridors */
-        .row-wall {
+        .corridor-row {
             background: var(--surface-2); border-radius: 8px;
             padding: 12px; margin-bottom: 8px;
             display: flex; justify-content: space-between; align-items: center;
             border-left: 3px solid transparent;
         }
-        .wall-title { font-size: 11px; font-family: var(--mono); color: var(--dim); text-transform: uppercase; }
-        .wall-val { font-size: 16px; font-weight: 700; font-family: var(--mono); }
+        .wall-name { font-size: 11px; font-family: var(--mono); color: var(--dim); text-transform: uppercase; }
+        .wall-price { font-size: 16px; font-weight: 700; font-family: var(--mono); }
 
         /* Table */
         .tb-wrap { overflow-x: auto; }
@@ -157,8 +154,7 @@
         th { background: var(--surface-2); padding: 8px; font-family: var(--mono); font-size: 10px; color: var(--dim); }
         td { padding: 10px 8px; border-bottom: 1px solid rgba(255,255,255,0.04); font-family: var(--mono); }
 
-        /* Calculator Input */
-        .calc-in {
+        .calc-input {
             width: 100%; background: #070a10; border: 1px solid var(--border);
             padding: 10px; border-radius: 6px; color: #fff; font-family: var(--mono);
             font-size: 13px; margin: 4px 0 10px;
@@ -170,26 +166,26 @@
 <header>
     <div class="brand">Ω ARES<span>QUANT</span></div>
     <div style="display:flex; gap:6px; align-items:center;">
-        <span class="sync-badge" id="sync-status">ENGINE LIVE</span>
-        <button id="pwa-install-btn" class="btn-secondary" style="padding:4px 8px; font-size:11px; width:auto; margin:0;">
+        <span class="badge" id="sync-status">ENGINE LIVE</span>
+        <button id="pwa-install-btn" class="btn-glass" style="padding:4px 8px; font-size:11px; width:auto; margin:0; border-radius:4px;">
             📱 Install
         </button>
     </div>
 </header>
 
-<!-- Working Navigation Tabs -->
-<div class="tab-bar-wrap">
-    <button class="tab-btn active" id="btn-all" onclick="filterSections('all', this)">🌐 All Modules</button>
-    <button class="tab-btn" id="btn-chart" onclick="filterSections('sec-chart', this)">📊 Chart & Actions</button>
-    <button class="tab-btn" id="btn-gex" onclick="filterSections('sec-gex', this)">🧱 GEX Corridors</button>
-    <button class="tab-btn" id="btn-macro" onclick="filterSections('sec-macro', this)">🏛️ Macro Radar</button>
-    <button class="tab-btn" id="btn-signals" onclick="filterSections('sec-signals', this)">📡 Signal Ledger</button>
-    <button class="tab-btn" id="btn-calc" onclick="filterSections('sec-calc', this)">⚙️ Execution Lab</button>
+<!-- Touch-Optimized Navigation Tabs -->
+<div class="tab-bar">
+    <div class="tab-item active" data-target="all">🌐 All Modules</div>
+    <div class="tab-item" data-target="sec-chart">📊 Chart & Actions</div>
+    <div class="tab-item" data-target="sec-gex">🧱 GEX Corridors</div>
+    <div class="tab-item" data-target="sec-macro">🏛️ Macro Radar</div>
+    <div class="tab-item" data-target="sec-signals">📡 Signal Ledger</div>
+    <div class="tab-item" data-target="sec-calc">⚙️ Execution Lab</div>
 </div>
 
 <div class="main-wrapper">
 
-    <!-- Global Live Data Strip (Always Active) -->
+    <!-- Global Live Data Strip -->
     <div class="stats-grid">
         <div class="stat-card">
             <div class="stat-title"><span>CME Spot</span><span>GC1!</span></div>
@@ -214,8 +210,8 @@
     </div>
 
     <!-- MODULE 1: CHART & ACTIONS -->
-    <div class="section-box" id="sec-chart">
-        <div class="section-hdr">
+    <div class="module-card" id="sec-chart">
+        <div class="module-hdr">
             <span>Gold Spot Live Tape (XAU/USD)</span>
             <span style="color:var(--gold);">REAL-TIME</span>
         </div>
@@ -224,59 +220,59 @@
                     style="width:100%; height:100%; border:none;" 
                     loading="lazy"></iframe>
         </div>
-        <a href="https://gold-macro-dashboard-5vuz6kxl25bappkbsjnisr7.streamlit.app/" target="_blank" class="btn-act btn-primary">
+        <a href="https://gold-macro-dashboard-5vuz6kxl25bappkbsjnisr7.streamlit.app/" target="_blank" class="action-btn btn-gold">
             📊 Open Full Streamlit Terminal
         </a>
-        <a href="https://t.me/X_M_A_E_bot" target="_blank" class="btn-act btn-secondary">
+        <a href="https://t.me/X_M_A_E_bot" target="_blank" class="action-btn btn-glass">
             📡 Launch Telegram Telemetry Bot
         </a>
-        <button type="button" class="btn-act btn-secondary" onclick="runQuantAI()" style="border-color:var(--gold); color:var(--gold-bright);">
+        <button type="button" id="btn-run-synthesis" class="action-btn btn-synthesis">
             ⚡ Run Quant Synthesis
         </button>
-        <div id="ai-output" style="font-size:12px; color:var(--muted); background:#0a0e17; padding:10px; border-radius:6px; line-height:1.5;">
+        <div id="ai-output" style="font-size:12px; color:var(--muted); background:#0a0e17; padding:12px; border-radius:6px; line-height:1.5;">
             Engine Active: Spot ($4,351.80) trades between $4,294.10 floor and $4,404.21 ceiling. Short expansion models favored on pullbacks.
         </div>
     </div>
 
     <!-- MODULE 2: GEX CORRIDORS -->
-    <div class="section-box" id="sec-gex">
-        <div class="section-hdr">
+    <div class="module-card" id="sec-gex">
+        <div class="module-hdr">
             <span>Options Dealer Corridors</span>
             <span style="color:var(--green);">GEX RESOLUTION</span>
         </div>
-        <div class="row-wall" style="border-color:var(--red);">
+        <div class="corridor-row" style="border-color:var(--red);">
             <div>
-                <div class="wall-title">Dealer Call Wall (Ceiling)</div>
+                <div class="wall-name">Dealer Call Wall (Ceiling)</div>
                 <div style="font-size:11px; color:var(--dim);" id="call-dist">Call: +$52.41</div>
             </div>
-            <div class="wall-val" style="color:var(--red);" id="live-call-wall">$4,404.21</div>
+            <div class="wall-price" style="color:var(--red);" id="live-call-wall">$4,404.21</div>
         </div>
-        <div class="row-wall" style="border-color:var(--green);">
+        <div class="corridor-row" style="border-color:var(--green);">
             <div>
-                <div class="wall-title">Dealer Put Wall (Floor)</div>
+                <div class="wall-name">Dealer Put Wall (Floor)</div>
                 <div style="font-size:11px; color:var(--dim);" id="put-dist">Put: +$57.70</div>
             </div>
-            <div class="wall-val" style="color:var(--green);" id="live-put-wall">$4,294.10</div>
+            <div class="wall-price" style="color:var(--green);" id="live-put-wall">$4,294.10</div>
         </div>
-        <div class="row-wall" style="border-color:var(--gold);">
+        <div class="corridor-row" style="border-color:var(--gold);">
             <div>
-                <div class="wall-title">Gamma Flip Boundary</div>
+                <div class="wall-name">Gamma Flip Boundary</div>
                 <div style="font-size:11px; color:var(--dim);">Zero Volatility Pivot</div>
             </div>
-            <div class="wall-val" style="color:var(--gold);" id="live-flip">$2,202.11</div>
+            <div class="wall-price" style="color:var(--gold);" id="live-flip">$2,202.11</div>
         </div>
-        <div class="row-wall" style="border-color:var(--blue);">
+        <div class="corridor-row" style="border-color:var(--blue);">
             <div>
-                <div class="wall-title">Gatekeeper Execution State</div>
+                <div class="wall-name">Gatekeeper Execution State</div>
                 <div style="font-size:11px; color:var(--dim);">Boundary Protection</div>
             </div>
-            <div class="wall-val" style="color:var(--green); font-size:13px;" id="corridor-status">CORRIDOR CLEAR</div>
+            <div class="wall-price" style="color:var(--green); font-size:13px;" id="corridor-status">CORRIDOR CLEAR</div>
         </div>
     </div>
 
     <!-- MODULE 3: MACRO RADAR -->
-    <div class="section-box" id="sec-macro">
-        <div class="section-hdr"><span>Cross-Asset Macro Vector</span><span>LSE / FRED</span></div>
+    <div class="module-card" id="sec-macro">
+        <div class="module-hdr"><span>Cross-Asset Macro Vector</span><span>LSE / FRED</span></div>
         <div style="display:grid; grid-template-columns:1fr 1fr; gap:10px; margin-bottom:10px;">
             <div style="background:var(--surface-2); padding:10px; border-radius:8px;">
                 <div style="font-size:10px; color:var(--dim); font-family:var(--mono);">US10Y YIELD</div>
@@ -293,8 +289,8 @@
     </div>
 
     <!-- MODULE 4: SIGNAL LEDGER -->
-    <div class="section-box" id="sec-signals">
-        <div class="section-hdr"><span>Verified Execution Ledger</span><span>trade_log.csv</span></div>
+    <div class="module-card" id="sec-signals">
+        <div class="module-hdr"><span>Verified Execution Ledger</span><span>trade_log.csv</span></div>
         <div class="tb-wrap">
             <table>
                 <thead>
@@ -308,7 +304,7 @@
                         <th>Status</th>
                     </tr>
                 </thead>
-                <tbody id="ledger-rows">
+                <tbody>
                     <tr>
                         <td>17:49 UTC</td>
                         <td><b style="color:var(--red);">SELL</b></td>
@@ -342,13 +338,13 @@
     </div>
 
     <!-- MODULE 5: EXECUTION CALCULATOR -->
-    <div class="section-box" id="sec-calc">
-        <div class="section-hdr"><span>Execution Lab Simulator</span><span>MIN RR 1:1.30</span></div>
+    <div class="module-card" id="sec-calc">
+        <div class="module-hdr"><span>Execution Lab Simulator</span><span>MIN RR 1:1.30</span></div>
         <label style="font-size:10px; font-family:var(--mono); color:var(--dim);">TEST SPOT ENTRY ($)</label>
-        <input type="number" id="sim-spot" class="calc-in" value="4330.00" oninput="runSim()">
+        <input type="number" id="sim-spot" class="calc-input" value="4330.00">
         
         <label style="font-size:10px; font-family:var(--mono); color:var(--dim);">DIRECTION</label>
-        <select id="sim-side" class="calc-in" onchange="runSim()">
+        <select id="sim-side" class="calc-input">
             <option value="SHORT">SHORT (QUANT PULLBACK)</option>
             <option value="LONG">LONG (CORRIDOR REBOUND)</option>
         </select>
@@ -364,83 +360,81 @@
 </div>
 
 <script>
-    // 1. Direct Touch Tab Filter (Immune to CSS Display Failures)
-    function filterSections(targetId, btn) {
-        // Update tab buttons
-        var buttons = document.querySelectorAll('.tab-btn');
-        for (var i = 0; i < buttons.length; i++) {
-            buttons[i].classList.remove('active');
-        }
-        btn.classList.add('active');
+    // 1. Unbreakable Native Pointer & Touch Navigation
+    document.addEventListener("DOMContentLoaded", function () {
+        const tabs = document.querySelectorAll(".tab-item");
+        const modules = ["sec-chart", "sec-gex", "sec-macro", "sec-signals", "sec-calc"];
 
-        var sections = ['sec-chart', 'sec-gex', 'sec-macro', 'sec-signals', 'sec-calc'];
-        
-        if (targetId === 'all') {
-            for (var j = 0; j < sections.length; j++) {
-                var el = document.getElementById(sections[j]);
-                if (el) el.style.display = 'block';
-            }
-        } else {
-            for (var k = 0; k < sections.length; k++) {
-                var sec = document.getElementById(sections[k]);
-                if (sec) {
-                    sec.style.display = (sections[k] === targetId) ? 'block' : 'none';
+        function handleTabSwitch(target) {
+            tabs.forEach(t => t.classList.remove("active"));
+            const activeTab = Array.from(tabs).find(t => t.getAttribute("data-target") === target);
+            if (activeTab) activeTab.classList.add("active");
+
+            if (target === "all") {
+                modules.forEach(id => {
+                    const el = document.getElementById(id);
+                    if (el) el.style.display = "block";
+                });
+            } else {
+                modules.forEach(id => {
+                    const el = document.getElementById(id);
+                    if (el) el.style.display = (id === target) ? "block" : "none";
+                });
+                const targetEl = document.getElementById(target);
+                if (targetEl) {
+                    targetEl.scrollIntoView({ behavior: "smooth", block: "start" });
                 }
             }
-            // Scroll directly to target section smoothly
-            var targetEl = document.getElementById(targetId);
-            if (targetEl) {
-                targetEl.scrollIntoView({ behavior: 'smooth', block: 'start' });
-            }
         }
-    }
 
-    // 2. Telemetry State
-    var data = {
-        spot: 4351.80,
-        callWall: 4404.21,
-        putWall: 4294.10,
-        flip: 2202.11,
-        dex: -615.1,
-        yield: 4.92,
-        callTel: "Call: +$52.41",
-        putTel: "Put: +$57.70"
-    };
+        tabs.forEach(tab => {
+            const target = tab.getAttribute("data-target");
+            // Native pointerup fires consistently across both mobile touch and desktop mouse
+            tab.addEventListener("pointerup", function (e) {
+                e.preventDefault();
+                handleTabSwitch(target);
+            });
+            tab.addEventListener("click", function (e) {
+                e.preventDefault();
+                handleTabSwitch(target);
+            });
+        });
 
-    function updateUI() {
-        document.getElementById('val-spot').innerText = '$' + data.spot.toFixed(2);
-        
-        var dexEl = document.getElementById('val-dex');
-        dexEl.innerText = (data.dex > 0 ? '+' : '') + data.dex.toFixed(1) + 'M';
-        dexEl.style.color = data.dex >= 0 ? 'var(--green)' : 'var(--red)';
+        // 2. Direct AI Synthesis Button Event
+        const btnSynthesis = document.getElementById("btn-run-synthesis");
+        const aiOutput = document.getElementById("ai-output");
 
-        document.getElementById('val-yield').innerText = data.yield.toFixed(2) + '%';
-        document.getElementById('macro-yield').innerText = data.yield.toFixed(2) + '%';
-
-        document.getElementById('live-call-wall').innerText = '$' + data.callWall.toFixed(2);
-        document.getElementById('live-put-wall').innerText = '$' + data.putWall.toFixed(2);
-        document.getElementById('live-flip').innerText = '$' + data.flip.toFixed(2);
-
-        document.getElementById('call-dist').innerText = data.callTel;
-        document.getElementById('put-dist').innerText = data.putTel;
-
-        var statusEl = document.getElementById('corridor-status');
-        if (data.spot < data.putWall) {
-            statusEl.innerText = 'PUT WALL BREACHED';
-            statusEl.style.color = 'var(--red)';
-        } else if (data.spot > data.callWall) {
-            statusEl.innerText = 'CALL WALL SQUEEZE';
-            statusEl.style.color = 'var(--gold)';
-        } else {
-            statusEl.innerText = 'CORRIDOR CLEAR';
-            statusEl.style.color = 'var(--green)';
+        function executeSynthesis(e) {
+            if (e) e.preventDefault();
+            aiOutput.innerHTML = "<i>⚡ Running real-time institutional inference...</i>";
+            setTimeout(() => {
+                aiOutput.innerHTML = `<b>🤖 Quant Verdict:</b> Spot ($${data.spot.toFixed(2)}) trades between $${data.putWall.toFixed(2)} floor and $${data.callWall.toFixed(2)} ceiling. Macro yields (+${data.yield.toFixed(2)}%) and negative dealer DEX (${data.dex.toFixed(1)}M) favor systematic trend shorting on intraday rejections.`;
+            }, 300);
         }
-    }
 
-    // 3. AI Quant Synthesis Button
-    function runQuantAI() {
-        var out = document.getElementById('ai-output');
-        out.innerHTML = '<i>⚡ Synthesizing live parity: Spot $' + data.spot.toFixed(2) + ' | US10Y ' + data.yield.toFixed(2) + '% | Net DEX ' + data.dex.toFixed(1) + 'M...</i>';
+        if (btnSynthesis) {
+            btnSynthesis.addEventListener("pointerup", executeSynthesis);
+            btnSynthesis.addEventListener("click", executeSynthesis);
+        }
 
-        setTimeout(function() {
-            out.innerHTML = '<b>🤖 Quant Verdict:</b> Spot ($' + data.spot.toFixed(2) + ') trades between $' + data.p
+        // 3. Simulator Bindings
+        const simSpot = document.getElementById("sim-spot");
+        const simSide = document.getElementById("sim-side");
+        const simRes = document.getElementById("sim-res");
+
+        function recalculateSim() {
+            const s = parseFloat(simSpot.value) || 4330.0;
+            const side = simSide.value;
+            const sl = side === "SHORT" ? s + 15.50 : s - 15.50;
+            const tp = side === "SHORT" ? s - 32.00 : s + 32.00;
+            const rr = (32.00 / 15.50).toFixed(2);
+
+            simRes.innerHTML = `• Projected SL: <b>$${sl.toFixed(2)}</b> ($15.50 risk)<br>` +
+                              `• Target TP: <b>$${tp.toFixed(2)}</b> ($32.00 target)<br>` +
+                              `• Offered R:R: <b style="color:var(--green);">1:${rr}</b> (Passes Gatekeeper)<br>` +
+                              `• Gate: <span style="color:var(--green);">Trade Approved</span>`;
+        }
+
+        if (simSpot && simSide) {
+            simSpot.addEventListener("input", recalculateSim);
+            simSide.addEven
