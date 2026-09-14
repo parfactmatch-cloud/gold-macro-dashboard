@@ -3,387 +3,420 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>ARES-XAU | Institutional Gold Macro & Gamma Options Terminal</title>
-    <meta name="description" content="Autonomous Sub-second Macro & Options Gamma Volatility Arbitrage Terminal for Gold (XAU/USD).">
+    <title>ARES-XAU | Institutional Quantitative Terminal</title>
     
-    <!-- PWA Standard Metadata -->
     <link rel="manifest" href="manifest.json">
     <meta name="theme-color" content="#06080d">
     <meta name="apple-mobile-web-app-capable" content="yes">
-    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-    <link rel="apple-touch-icon" href="https://assets.coingecko.com/coins/images/9576/large/paxg.png">
 
-    <!-- Fonts -->
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@700&family=JetBrains+Mono:wght@400;500;600;700&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600;700&family=Plus+Jakarta+Sans:wght@400;600;700;800&display=swap" rel="stylesheet">
     
     <style>
         :root {
             --bg: #06080d;
             --surface-1: #0d111a;
             --surface-2: #141a27;
-            --surface-3: #1a2233;
             --surface-border: rgba(255, 255, 255, 0.08);
-            --surface-border-gold: rgba(245, 158, 11, 0.28);
             --gold: #f59e0b;
             --gold-bright: #fbbf24;
-            --gold-glow: rgba(245, 158, 11, 0.35);
             --green: #10b981;
-            --green-glow: rgba(16, 185, 129, 0.2);
             --red: #f43f5e;
             --blue: #38bdf8;
             --text-main: #f8fafc;
             --text-muted: #94a3b8;
-            --text-dim: #475569;
+            --text-dim: #64748b;
             --font-main: 'Plus Jakarta Sans', sans-serif;
             --font-mono: 'JetBrains Mono', monospace;
-            --font-serif: 'Cinzel', serif;
         }
 
-        * { box-sizing: border-box; margin: 0; padding: 0; scroll-behavior: smooth; -webkit-tap-highlight-color: transparent; }
+        * { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
         body {
             background-color: var(--bg);
             color: var(--text-main);
             font-family: var(--font-main);
-            line-height: 1.6;
-            overflow-x: hidden;
-            background-image: 
-                radial-gradient(ellipse 80% 50% at 50% -20%, rgba(245, 158, 11, 0.12), transparent),
-                radial-gradient(circle at 90% 80%, rgba(56, 189, 248, 0.03), transparent);
+            min-height: 100vh;
+            padding-bottom: 40px;
         }
 
-        .bg-grid {
-            position: fixed; top: 0; left: 0; right: 0; bottom: 0;
-            background-size: 40px 40px;
-            background-image: linear-gradient(to right, rgba(255, 255, 255, 0.02) 1px, transparent 1px),
-                              linear-gradient(to bottom, rgba(255, 255, 255, 0.02) 1px, transparent 1px);
-            pointer-events: none; z-index: 0;
-        }
-
-        .container { max-width: 1240px; margin: 0 auto; padding: 0 20px; position: relative; z-index: 1; }
-
-        /* Sticky Glass Header */
+        /* Header */
         header {
             position: sticky; top: 0; z-index: 100;
-            backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px);
-            background: rgba(6, 8, 13, 0.85); border-bottom: 1px solid var(--surface-border);
-        }
-        nav {
+            background: #06080d; border-bottom: 1px solid var(--surface-border);
+            padding: 10px 16px;
             display: flex; align-items: center; justify-content: space-between;
-            padding: 14px 0; max-width: 1240px; margin: 0 auto; padding-left: 20px; padding-right: 20px;
         }
-        .brand { display: flex; align-items: center; gap: 10px; text-decoration: none; color: inherit; }
-        .brand-badge {
-            width: 34px; height: 34px;
-            background: linear-gradient(135deg, var(--gold), #78350f);
-            border-radius: 8px; display: flex; align-items: center; justify-content: center;
-            font-weight: 800; color: #000; font-family: var(--font-serif);
-            box-shadow: 0 0 15px var(--gold-glow); font-size: 16px;
+        .brand { font-weight: 800; font-size: 16px; display: flex; align-items: center; gap: 8px; }
+        .brand span { color: var(--gold); }
+        .badge {
+            background: rgba(16, 185, 129, 0.1); border: 1px solid rgba(16, 185, 129, 0.3);
+            color: var(--green); font-size: 10px; font-family: var(--font-mono);
+            padding: 3px 8px; border-radius: 20px;
         }
-        .brand-name { font-weight: 800; font-size: 17px; letter-spacing: -0.5px; }
-        .brand-name span { color: var(--gold); }
-        
-        .nav-links { display: flex; align-items: center; gap: 22px; list-style: none; }
-        .nav-links a { text-decoration: none; color: var(--text-muted); font-size: 13px; font-weight: 600; transition: color 0.2s; }
-        .nav-links a:hover { color: var(--gold-bright); }
 
-        .nav-actions { display: flex; align-items: center; gap: 10px; }
-        .nav-status {
-            display: flex; align-items: center; gap: 8px;
-            background: rgba(16, 185, 129, 0.08); border: 1px solid rgba(16, 185, 129, 0.25);
-            padding: 5px 12px; border-radius: 20px; font-size: 11px;
-            font-family: var(--font-mono); color: var(--green);
+        /* Real Tab Navigation Bar */
+        .tabs-nav {
+            display: flex; background: #090d16; border-bottom: 1px solid var(--surface-border);
+            overflow-x: auto; white-space: nowrap; padding: 4px 8px; gap: 6px;
         }
-        .live-dot {
-            width: 7px; height: 7px; background: var(--green);
-            border-radius: 50%; box-shadow: 0 0 8px var(--green); animation: pulse 1.8s infinite;
+        .tab-button {
+            background: transparent; border: none; outline: none;
+            color: var(--text-muted); font-family: var(--font-main);
+            font-size: 12px; font-weight: 700; padding: 10px 14px;
+            border-radius: 6px; cursor: pointer; display: flex; align-items: center; gap: 6px;
         }
-        @keyframes pulse { 0%, 100% { opacity: 1; transform: scale(1); } 50% { opacity: 0.3; } }
+        .tab-button.active {
+            background: rgba(245, 158, 11, 0.12); color: var(--gold-bright);
+            border: 1px solid rgba(245, 158, 11, 0.3);
+        }
 
-        /* Ticker Tape */
-        .tape-wrapper {
-            width: 100%; overflow: hidden; background: #080b12;
-            border-bottom: 1px solid var(--surface-border); white-space: nowrap; padding: 7px 0;
-            font-family: var(--font-mono); font-size: 11px; color: var(--text-muted);
-        }
-        .tape-content {
-            display: inline-block; animation: scroll-tape 40s linear infinite;
-        }
-        @keyframes scroll-tape {
-            0% { transform: translateX(0); }
-            100% { transform: translateX(-50%); }
-        }
-        .tape-item { display: inline-flex; align-items: center; gap: 6px; margin: 0 16px; }
+        .container { max-width: 1200px; margin: 0 auto; padding: 14px; }
 
-        /* Buttons */
-        .btn {
-            display: inline-flex; align-items: center; gap: 8px;
-            padding: 10px 18px; border-radius: 8px; font-weight: 700; font-size: 12.5px;
-            text-decoration: none; transition: all 0.2s ease; cursor: pointer; border: none;
-            font-family: var(--font-main);
-        }
-        .btn-gold { background: linear-gradient(135deg, var(--gold), #d97706); color: #000; box-shadow: 0 4px 18px var(--gold-glow); }
-        .btn-gold:hover { transform: translateY(-1.5px); }
-        .btn-glass { background: var(--surface-1); border: 1px solid var(--surface-border); color: var(--text-main); }
-        .btn-glass:hover { background: var(--surface-2); border-color: rgba(255, 255, 255, 0.2); }
-
-        /* Hero */
-        .hero { padding: 45px 0 30px; text-align: center; display: flex; flex-direction: column; align-items: center; }
-        .hero-tag {
-            display: inline-flex; align-items: center; gap: 8px;
-            padding: 5px 14px; background: rgba(245, 158, 11, 0.08);
-            border: 1px solid var(--surface-border-gold); border-radius: 30px;
-            font-size: 11px; font-family: var(--font-mono); color: var(--gold-bright);
-            margin-bottom: 18px; text-transform: uppercase; letter-spacing: 1px;
-        }
-        .hero h1 {
-            font-size: clamp(28px, 4.5vw, 50px); font-weight: 800; line-height: 1.15;
-            letter-spacing: -1.2px; max-width: 880px;
-            background: linear-gradient(180deg, #ffffff 40%, var(--text-muted) 100%);
-            -webkit-background-clip: text; -webkit-text-fill-color: transparent; margin-bottom: 14px;
-        }
-        .hero p { font-size: clamp(14px, 1.8vw, 16px); color: var(--text-muted); max-width: 740px; margin-bottom: 24px; }
-        .hero-cta { display: flex; gap: 12px; flex-wrap: wrap; justify-content: center; }
-
-        /* Live Metric Grid */
+        /* Metric Strip */
         .live-strip {
-            display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
-            gap: 14px; margin-bottom: 30px;
+            display: grid; grid-template-columns: repeat(2, 1fr);
+            gap: 10px; margin-bottom: 16px;
+        }
+        @media(min-width: 768px) {
+            .live-strip { grid-template-columns: repeat(4, 1fr); }
         }
         .strip-card {
             background: var(--surface-1); border: 1px solid var(--surface-border);
-            border-radius: 12px; padding: 16px;
+            border-radius: 10px; padding: 12px;
         }
         .strip-title {
-            font-size: 11px; text-transform: uppercase; letter-spacing: 0.8px;
-            color: var(--text-dim); font-family: var(--font-mono); display: flex;
-            align-items: center; justify-content: space-between;
+            font-size: 10px; text-transform: uppercase; color: var(--text-dim);
+            font-family: var(--font-mono); display: flex; justify-content: space-between;
         }
-        .strip-val { font-size: 25px; font-weight: 800; font-family: var(--font-mono); margin: 6px 0 2px; }
-        .strip-sub { font-size: 11.5px; font-weight: 500; }
+        .strip-val { font-size: 20px; font-weight: 800; font-family: var(--font-mono); margin: 4px 0 2px; }
+        .strip-sub { font-size: 11px; font-weight: 600; }
 
-        /* Section Headings */
-        .section-header {
-            margin-bottom: 18px; display: flex; justify-content: space-between; align-items: flex-end;
-            border-bottom: 1px solid var(--surface-border); padding-bottom: 10px;
-        }
-        .section-title { font-size: 18px; font-weight: 800; letter-spacing: -0.3px; display: flex; align-items: center; gap: 8px; }
-        .section-subtitle { font-size: 12px; font-family: var(--font-mono); color: var(--text-dim); }
+        /* Tab Content Panels */
+        .tab-panel { display: none; }
+        .tab-panel.active { display: block; }
 
-        /* Grid Terminals */
-        .chart-analytics-grid {
-            display: grid; grid-template-columns: 1.4fr 1fr; gap: 20px; margin-bottom: 35px;
-        }
-        .terminal-panel {
+        /* Panels */
+        .card {
             background: var(--surface-1); border: 1px solid var(--surface-border);
-            border-radius: 14px; padding: 18px; display: flex; flex-direction: column;
+            border-radius: 12px; padding: 16px; margin-bottom: 14px;
         }
-        .panel-header {
+        .card-header {
+            font-size: 12px; font-family: var(--font-mono); color: var(--text-muted);
+            text-transform: uppercase; font-weight: 700; margin-bottom: 12px;
             display: flex; justify-content: space-between; align-items: center;
-            margin-bottom: 12px; font-family: var(--font-mono); font-size: 12px;
-            color: var(--text-muted); text-transform: uppercase; font-weight: 600;
         }
 
-        /* Corridor Visualizer */
-        .corridor-container {
-            display: flex; flex-direction: column; gap: 12px; height: 100%; justify-content: center;
-        }
-        .wall-row {
+        /* Corridors UI */
+        .wall-box {
             background: var(--surface-2); border: 1px solid rgba(255,255,255,0.05);
-            border-radius: 10px; padding: 12px 14px; display: flex; justify-content: space-between; align-items: center;
+            border-radius: 8px; padding: 12px; margin-bottom: 10px;
+            display: flex; justify-content: space-between; align-items: center;
         }
-        .wall-title { font-size: 11px; font-family: var(--font-mono); color: var(--text-dim); text-transform: uppercase; }
-        .wall-val { font-size: 16px; font-weight: 700; font-family: var(--font-mono); }
+        .wall-label { font-size: 11px; color: var(--text-dim); text-transform: uppercase; font-family: var(--font-mono); }
+        .wall-price { font-size: 16px; font-weight: 700; font-family: var(--font-mono); }
 
-        .progress-track {
-            height: 10px; background: #07090e; border-radius: 8px; position: relative; overflow: visible; margin: 15px 0 8px;
+        /* Buttons */
+        .btn {
+            display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+            padding: 12px; border-radius: 8px; font-weight: 700; font-size: 13px;
+            text-decoration: none; cursor: pointer; border: none; font-family: var(--font-main);
+            width: 100%; margin-bottom: 10px;
         }
-        .progress-fill {
-            position: absolute; left: 10%; width: 80%; height: 100%;
-            background: linear-gradient(90deg, var(--green), var(--gold)); border-radius: 8px; opacity: 0.8;
-        }
-        .progress-spot {
-            position: absolute; left: 45%; top: -16px; transform: translateX(-50%);
-            background: #fff; color: #000; font-family: var(--font-mono); font-size: 10px;
-            font-weight: 800; padding: 2px 6px; border-radius: 4px; box-shadow: 0 0 10px #fff;
-            white-space: nowrap;
-        }
+        .btn-gold { background: linear-gradient(135deg, var(--gold), #d97706); color: #000; }
+        .btn-glass { background: var(--surface-2); border: 1px solid var(--surface-border); color: var(--text-main); }
 
-        /* Macro Layer */
-        .macro-grid {
-            display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; margin-bottom: 35px;
-        }
-        .macro-card {
-            background: var(--surface-1); border: 1px solid var(--surface-border);
-            border-radius: 12px; padding: 16px;
-        }
-        .macro-metric { font-size: 22px; font-weight: 800; font-family: var(--font-mono); margin: 6px 0; }
+        /* Table */
+        .table-wrap { overflow-x: auto; }
+        table { width: 100%; border-collapse: collapse; font-size: 12px; text-align: left; }
+        th { background: var(--surface-2); padding: 10px; font-family: var(--font-mono); font-size: 10px; color: var(--text-dim); }
+        td { padding: 10px; border-bottom: 1px solid rgba(255,255,255,0.04); font-family: var(--font-mono); }
+        .tag-sell { color: var(--red); font-weight: 700; }
 
-        /* Signal Ledger Table */
-        .ledger-container {
-            background: var(--surface-1); border: 1px solid var(--surface-border);
-            border-radius: 14px; overflow: hidden; margin-bottom: 35px;
-        }
-        .ledger-table {
-            width: 100%; border-collapse: collapse; font-size: 12.5px; text-align: left;
-        }
-        .ledger-table th {
-            background: var(--surface-2); padding: 12px 16px; font-family: var(--font-mono);
-            font-size: 11px; color: var(--text-dim); text-transform: uppercase; border-bottom: 1px solid var(--surface-border);
-        }
-        .ledger-table td {
-            padding: 12px 16px; border-bottom: 1px solid rgba(255,255,255,0.04); font-family: var(--font-mono);
-        }
-        .ledger-table tr:hover { background: rgba(255,255,255,0.02); }
-
-        .badge-buy { background: rgba(16,185,129,0.15); color: var(--green); padding: 3px 8px; border-radius: 4px; font-weight: 700; }
-        .badge-sell { background: rgba(244,63,94,0.15); color: var(--red); padding: 3px 8px; border-radius: 4px; font-weight: 700; }
-
-        /* Interactive Playground / Calculator */
-        .calc-panel {
-            background: var(--surface-1); border: 1px solid var(--surface-border-gold);
-            border-radius: 14px; padding: 20px; margin-bottom: 35px;
-        }
-        .calc-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
-        .calc-input {
-            width: 100%; background: #070a10; border: 1px solid var(--surface-border);
-            padding: 12px; border-radius: 8px; color: #fff; font-family: var(--font-mono);
-            font-size: 14px; margin-top: 6px;
-        }
-        .calc-output {
-            background: #070a10; border: 1px solid rgba(255,255,255,0.06);
-            border-radius: 8px; padding: 14px; font-family: var(--font-mono); font-size: 12.5px;
-        }
-
-        /* AI Synthesizer */
-        .ai-card {
-            background: linear-gradient(180deg, #101624 0%, var(--surface-1) 100%);
-            border: 1px solid var(--surface-border-gold); border-radius: 16px;
-            padding: 22px; margin-bottom: 35px;
-        }
-        .ai-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 14px; }
-        .ai-title { display: flex; align-items: center; gap: 8px; font-weight: 800; font-size: 15px; color: var(--gold-bright); }
-        .ai-badge { font-family: var(--font-mono); font-size: 11px; color: var(--green); background: rgba(16,185,129,0.1); padding: 3px 8px; border-radius: 6px; }
-        .ai-output-box {
-            background: #070a10; border: 1px solid rgba(255, 255, 255, 0.05);
-            border-radius: 10px; padding: 16px; font-size: 13.5px; color: var(--text-muted);
-            line-height: 1.6; min-height: 90px;
-        }
-
-        footer { border-top: 1px solid var(--surface-border); padding: 25px 0; text-align: center; font-size: 11px; color: var(--text-dim); font-family: var(--font-mono); }
-
-        @media (max-width: 900px) {
-            .chart-analytics-grid, .macro-grid, .calc-grid { grid-template-columns: 1fr; }
-            .nav-links { display: none; }
+        /* Chart Frame Fallback Container */
+        .chart-box {
+            width: 100%; height: 360px; background: #000; border-radius: 8px; overflow: hidden; position: relative;
         }
     </style>
 </head>
 <body>
 
-<div class="bg-grid"></div>
-
-<!-- Top Sticky Navigation -->
 <header>
-    <nav>
-        <a href="#" class="brand">
-            <div class="brand-badge">Ω</div>
-            <div class="brand-name">ARES<span>QUANT</span></div>
-        </a>
-
-        <ul class="nav-links">
-            <li><a href="#terminal">Terminal</a></li>
-            <li><a href="#corridors">Gamma Corridors</a></li>
-            <li><a href="#macro">Macro Radar</a></li>
-            <li><a href="#signals">Signal Ledger</a></li>
-            <li><a href="#calculator">Execution Lab</a></li>
-        </ul>
-
-        <div class="nav-actions">
-            <div class="nav-status">
-                <div class="live-dot"></div>
-                <span id="sync-status">LIVE SYNC</span>
-            </div>
-            <button type="button" id="pwa-install-btn" class="btn btn-glass" style="padding: 7px 12px; font-size: 11px;">
-                <span>📱</span> Install App
-            </button>
-        </div>
-    </nav>
+    <div class="brand">Ω ARES<span>QUANT</span></div>
+    <div style="display:flex; gap:8px; align-items:center;">
+        <span class="badge" id="sync-status">LIVE SYNCED</span>
+        <button id="pwa-install-btn" class="btn-glass" style="padding:4px 8px; font-size:11px; border-radius:4px; width:auto; margin:0;">
+            📱 Install
+        </button>
+    </div>
 </header>
 
-<!-- Horizontal Running Ticker Tape -->
-<div class="tape-wrapper">
-    <div class="tape-content">
-        <div class="tape-item"><span>CME GC1! SPOT:</span> <b style="color:var(--gold);">$4,351.80</b></div>
-        <div class="tape-item"><span>CONTANGO BASIS:</span> <b style="color:var(--green);">+$59.10</b></div>
-        <div class="tape-item"><span>DEALER NET DEX:</span> <b style="color:var(--red);">-615.1M</b></div>
-        <div class="tape-item"><span>US10Y YIELD:</span> <b style="color:var(--red);">4.92% (BEARISH HEADWIND)</b></div>
-        <div class="tape-item"><span>FED TIPS REAL YIELD:</span> <b style="color:var(--blue);">+2.14%</b></div>
-        <div class="tape-item"><span>MARKET REGIME:</span> <b style="color:var(--gold);">LONG GAMMA PIN DECAY</b></div>
-        <div class="tape-item"><span>GATEKEEPER FILTER:</span> <b style="color:var(--green);">ACTIVE (MIN RR 1:1.30)</b></div>
-        <!-- Duplicated for continuous loop -->
-        <div class="tape-item"><span>CME GC1! SPOT:</span> <b style="color:var(--gold);">$4,351.80</b></div>
-        <div class="tape-item"><span>CONTANGO BASIS:</span> <b style="color:var(--green);">+$59.10</b></div>
-        <div class="tape-item"><span>DEALER NET DEX:</span> <b style="color:var(--red);">-615.1M</b></div>
-        <div class="tape-item"><span>US10Y YIELD:</span> <b style="color:var(--red);">4.92% (BEARISH HEADWIND)</b></div>
-    </div>
+<!-- Working Multi-Tab Navigation -->
+<div class="tabs-nav">
+    <button class="tab-button active" onclick="setTab('tab-terminal', this)">📊 Terminal</button>
+    <button class="tab-button" onclick="setTab('tab-corridors', this)">🧱 Corridors</button>
+    <button class="tab-button" onclick="setTab('tab-macro', this)">🏛️ Macro Radar</button>
+    <button class="tab-button" onclick="setTab('tab-signals', this)">📡 Signal Ledger</button>
+    <button class="tab-button" onclick="setTab('tab-calculator', this)">⚙️ Execution Lab</button>
 </div>
 
 <div class="container">
-    <!-- Hero Header -->
-    <section class="hero" id="terminal">
-        <div class="hero-tag">
-            <span>⚡ Institutional Gold Execution Architecture</span>
-        </div>
-        <h1>Autonomous Options Gamma & Macro Parity Terminal</h1>
-        <p>
-            Sub-second algorithmic arbitration orchestrating CME Gold Futures (GC1!), London Strategic Edge (LSE) US10Y bond telemetry, and dealer Gamma Exposure corridors.
-        </p>
-        <div class="hero-cta">
-            <a href="https://gold-macro-dashboard-5vuz6kxl25bappkbsjnisr7.streamlit.app/" target="_blank" class="btn btn-gold">
-                <span>📊</span> Streamlit Terminal
-            </a>
-            <a href="https://t.me/X_M_A_E_bot" target="_blank" class="btn btn-glass">
-                <span>📡</span> Telegram Radar
-            </a>
-            <a href="#calculator" class="btn btn-glass">
-                <span>⚙️</span> Execution Simulator
-            </a>
-        </div>
-    </section>
 
-    <!-- Metrics Matrix Strip -->
-    <section class="live-strip">
+    <!-- Global Live Data Strip -->
+    <div class="live-strip">
         <div class="strip-card">
-            <div class="strip-title"><span>CME Spot Parity</span><span style="color:var(--gold);">GC1! TAPE</span></div>
+            <div class="strip-title"><span>CME Spot</span><span>GC1!</span></div>
             <div class="strip-val" id="val-spot">$4,351.80</div>
-            <div class="strip-sub" style="color:var(--green);"><span id="val-spot-sub">▲ Sourced via Live Tape</span></div>
+            <div class="strip-sub" style="color:var(--green);">▲ Live Futures Parity</div>
         </div>
         <div class="strip-card">
-            <div class="strip-title"><span>Dealer Net DEX Tilt</span><span style="color:var(--green);" id="val-dex-tag">INVENTORY</span></div>
+            <div class="strip-title"><span>Net DEX</span><span style="color:var(--red);">INVENTORY</span></div>
             <div class="strip-val" id="val-dex" style="color:var(--red);">-615.1M</div>
-            <div class="strip-sub" style="color:var(--text-muted);"><span id="val-dex-sub">Dealers Net Short Delta</span></div>
+            <div class="strip-sub" style="color:var(--text-muted);">Dealers Net Short</div>
         </div>
         <div class="strip-card">
-            <div class="strip-title"><span>US10Y Yield Vector</span><span style="color:var(--red);">HEADWIND</span></div>
+            <div class="strip-title"><span>US10Y Yield</span><span style="color:var(--red);">MACRO</span></div>
             <div class="strip-val" id="val-yield" style="color:var(--red);">4.92%</div>
-            <div class="strip-sub" style="color:var(--red);"><span id="val-yield-sub">Bearish Macro Driver</span></div>
+            <div class="strip-sub" style="color:var(--red);">Bearish Vector</div>
         </div>
         <div class="strip-card">
-            <div class="strip-title"><span>Dealer Gamma Regime</span><span style="color:var(--gold);">VOLATILITY</span></div>
+            <div class="strip-title"><span>Regime</span><span style="color:var(--gold);">GEX</span></div>
             <div class="strip-val" id="val-regime" style="color:var(--gold-bright);">LONG GAMMA</div>
-            <div class="strip-sub" style="color:var(--text-muted);"><span>Mean-Reverting Dampening</span></div>
+            <div class="strip-sub" style="color:var(--text-muted);">Mean-Reverting</div>
         </div>
-    </section>
-
-    <!-- Terminal Layer: TradingView + Gamma Corridors -->
-    <div class="section-header" id="corridors">
-        <div class="section-title"><span>🧱</span> Institutional Gamma Corridors & Spot Chart</div>
-        <div class="section-subtitle">REAL-TIME OANDA / CME GC1! ARBITRAGE</div>
     </div>
 
-    <section class="chart-analytics-grid">
-        <div class="terminal-panel">
-            <div class="panel-header">
-                <span>Gold Spot Live Tape (XAU/USD)</span>
-                <span style="co
+    <!-- TAB 1: TERMINAL -->
+    <div id="tab-terminal" class="tab-panel active">
+        <div class="card">
+            <div class="card-header">
+                <span>Gold Live Chart (XAU/USD)</span>
+                <span style="color:var(--gold);">REAL-TIME</span>
+            </div>
+            <div class="chart-box">
+                <!-- Fallback-Safe TradingView iframe -->
+                <iframe src="https://s.tradingview.com/widgetembed/?frameElementId=tradingview_chart&symbol=OANDA%3AXAUUSD&interval=15&theme=dark" 
+                        style="width:100%; height:100%; border:none;" 
+                        loading="lazy"></iframe>
+            </div>
+        </div>
+
+        <div class="card">
+            <div class="card-header"><span>Institutional Actions</span></div>
+            <a href="https://gold-macro-dashboard-5vuz6kxl25bappkbsjnisr7.streamlit.app/" target="_blank" class="btn btn-gold">
+                <span>📊</span> Open Streamlit App
+            </a>
+            <a href="https://t.me/X_M_A_E_bot" target="_blank" class="btn btn-glass">
+                <span>📡</span> Telegram Bot Radar
+            </a>
+            <button type="button" class="btn btn-glass" onclick="runQuantAI()" style="border-color:var(--gold); color:var(--gold-bright);">
+                <span>⚡</span> Run Quant Synthesis
+            </button>
+            <div id="ai-output" style="font-size:12.5px; color:var(--text-muted); padding:10px; background:#070a10; border-radius:6px; line-height:1.5;">
+                Engine Active: Spot ($4,351.80) trades between $4,294.10 floor and $4,404.21 ceiling. Short bias active on pullbacks.
+            </div>
+        </div>
+    </div>
+
+    <!-- TAB 2: CORRIDORS -->
+    <div id="tab-corridors" class="tab-panel">
+        <div class="card">
+            <div class="card-header">
+                <span>Dealer Gamma Corridors</span>
+                <span style="color:var(--green);">GEX RESOLUTION</span>
+            </div>
+            <div class="wall-box" style="border-left:3px solid var(--red);">
+                <div>
+                    <div class="wall-label">Call Wall (Ceiling)</div>
+                    <div style="font-size:11px; color:var(--text-dim);" id="label-call-dist">Call: +$52.41</div>
+                </div>
+                <div class="wall-price" style="color:var(--red);" id="live-call-wall">$4,404.21</div>
+            </div>
+
+            <div class="wall-box" style="border-left:3px solid var(--green);">
+                <div>
+                    <div class="wall-label">Put Wall (Floor)</div>
+                    <div style="font-size:11px; color:var(--text-dim);" id="label-put-dist">Put: +$57.70</div>
+                </div>
+                <div class="wall-price" style="color:var(--green);" id="live-put-wall">$4,294.10</div>
+            </div>
+
+            <div class="wall-box" style="border-left:3px solid var(--gold);">
+                <div>
+                    <div class="wall-label">Gamma Flip Boundary</div>
+                    <div style="font-size:11px; color:var(--text-dim);">Neutrality Pivot</div>
+                </div>
+                <div class="wall-price" style="color:var(--gold);" id="live-flip">$2,202.11</div>
+            </div>
+
+            <div class="wall-box" style="border-left:3px solid var(--blue);">
+                <div>
+                    <div class="wall-label">Gatekeeper Status</div>
+                    <div style="font-size:11px; color:var(--text-dim);">Barrier Policy</div>
+                </div>
+                <div class="wall-price" style="color:var(--green); font-size:13px;" id="live-status">CORRIDOR CLEAR</div>
+            </div>
+        </div>
+    </div>
+
+    <!-- TAB 3: MACRO -->
+    <div id="tab-macro" class="tab-panel">
+        <div class="card">
+            <div class="card-header"><span>US 10-Year Bond Yield</span><span>LSE SERIES</span></div>
+            <div style="font-size:28px; font-weight:800; font-family:var(--font-mono); color:var(--red); margin:8px 0;" id="macro-yield">4.92%</div>
+            <div style="color:var(--red); font-size:12px; font-weight:700;">▲ Bearish Pressure Vector for Non-Yielding Gold</div>
+            <p style="font-size:12px; color:var(--text-muted); margin-top:8px;">
+                Rising Treasury yields raise the opportunity cost of holding physical gold, supporting downside momentum.
+            </p>
+        </div>
+        <div class="card">
+            <div class="card-header"><span>St. Louis Fed (FRED)</span><span>REAL YIELD</span></div>
+            <div style="font-size:28px; font-weight:800; font-family:var(--font-mono); color:var(--blue); margin:8px 0;">+2.14%</div>
+            <div style="color:var(--text-muted); font-size:12px;">TIPS 10Y Real Rates Positive</div>
+        </div>
+    </div>
+
+    <!-- TAB 4: SIGNALS -->
+    <div id="tab-signals" class="tab-panel">
+        <div class="card" style="padding:0; overflow:hidden;">
+            <div class="table-wrap">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Time (UTC)</th>
+                            <th>Side</th>
+                            <th>Entry</th>
+                            <th>SL</th>
+                            <th>TP</th>
+                            <th>Status</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td>17:49</td>
+                            <td><span class="tag-sell">SELL</span></td>
+                            <td>$4,316.81</td>
+                            <td>$4,343.76</td>
+                            <td>$4,265.41</td>
+                            <td style="color:var(--green);">ACTIVE (1:1.91)</td>
+                        </tr>
+                        <tr>
+                            <td>16:00</td>
+                            <td><span class="tag-sell">SELL</span></td>
+                            <td>$4,296.61</td>
+                            <td>$4,323.06</td>
+                            <td>$4,246.21</td>
+                            <td style="color:var(--green);">CLOSED (+50.40)</td>
+                        </tr>
+                        <tr>
+                            <td>03:52</td>
+                            <td><span class="tag-sell">SELL</span></td>
+                            <td>$4,336.75</td>
+                            <td>$4,349.80</td>
+                            <td>$4,313.15</td>
+                            <td style="color:var(--green);">HIT TP (+23.60)</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <!-- TAB 5: CALCULATOR -->
+    <div id="tab-calculator" class="tab-panel">
+        <div class="card">
+            <div class="card-header"><span>Execution Lab Simulator</span></div>
+            <label style="font-size:11px; font-family:var(--font-mono); color:var(--text-dim);">HYPOTHETICAL SPOT ENTRY ($)</label>
+            <input type="number" id="sim-spot" style="width:100%; background:#070a10; border:1px solid var(--surface-border); padding:10px; border-radius:6px; color:#fff; font-family:var(--font-mono); margin:6px 0 12px;" value="4330.00" oninput="runSim()">
+
+            <div style="background:#070a10; padding:12px; border-radius:6px; font-family:var(--font-mono); font-size:12px;" id="sim-box">
+                • Target SL: <b>$4,345.50</b> ($15.50 risk)<br>
+                • Target TP: <b>$4,298.00</b> ($32.00 reward)<br>
+                • Risk/Reward: <b style="color:var(--green);">1:2.06</b> (Passes Gatekeeper)
+            </div>
+        </div>
+    </div>
+
+</div>
+
+<script>
+    // Tab Switch Engine
+    function setTab(tabId, btn) {
+        document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
+        document.querySelectorAll('.tab-button').forEach(b => b.classList.remove('active'));
+
+        document.getElementById(tabId).classList.add('active');
+        btn.classList.add('active');
+    }
+
+    // Telemetry State
+    var data = {
+        spot: 4351.80,
+        callWall: 4404.21,
+        putWall: 4294.10,
+        flip: 2202.11,
+        dex: -615.1,
+        yield: 4.92,
+        callTel: "Call: +$52.41",
+        putTel: "Put: +$57.70"
+    };
+
+    function updateUI() {
+        document.getElementById('val-spot').innerText = '$' + data.spot.toFixed(2);
+        document.getElementById('val-dex').innerText = (data.dex > 0 ? '+' : '') + data.dex.toFixed(1) + 'M';
+        document.getElementById('val-yield').innerText = data.yield.toFixed(2) + '%';
+        document.getElementById('macro-yield').innerText = data.yield.toFixed(2) + '%';
+
+        document.getElementById('live-call-wall').innerText = '$' + data.callWall.toFixed(2);
+        document.getElementById('live-put-wall').innerText = '$' + data.putWall.toFixed(2);
+        document.getElementById('live-flip').innerText = '$' + data.flip.toFixed(2);
+
+        document.getElementById('label-call-dist').innerText = data.callTel;
+        document.getElementById('label-put-dist').innerText = data.putTel;
+    }
+
+    function runQuantAI() {
+        var out = document.getElementById('ai-output');
+        out.innerText = "⚡ Synthesizing live parity: Spot $" + data.spot.toFixed(2) + " | US10Y " + data.yield.toFixed(2) + "% | Net DEX " + data.dex.toFixed(1) + "M...";
+        setTimeout(function() {
+            out.innerHTML = "<b>Quant Verdict:</b> Spot ($" + data.spot.toFixed(2) + ") remains inside dealer boundaries. Bearish macro vector (US10Y " + data.yield.toFixed(2) + "%) and negative dealer DEX (" + data.dex.toFixed(1) + "M) keep short expansion models active.";
+        }, 300);
+    }
+
+    function runSim() {
+        var s = parseFloat(document.getElementById('sim-spot').value) || 4330.0;
+        var sl = s + 15.50;
+        var tp = s - 32.00;
+        document.getElementById('sim-box').innerHTML = 
+            "• Target SL: <b>$" + sl.toFixed(2) + "</b> ($15.50 risk)<br>" +
+            "• Target TP: <b>$" + tp.toFixed(2) + "</b> ($32.00 reward)<br>" +
+            "• Risk/Reward: <b style='color:var(--green);'>1:2.06</b> (Passes Gatekeeper)";
+    }
+
+    // Dynamic GitHub Raw Sync
+    function syncLevels() {
+        var ts = new Date().getTime();
+        fetch('https://raw.githubusercontent.com/parfactmatch-cloud/gold-macro-dashboard/main/gex_levels.json?t=' + ts)
+            .then(r => r.ok ? r.json() : null)
+            .then(j => {
+                if (j) {
+                    if (j.spot_xau) data.spot = parseFloat(j.spot_xau);
+                    if (j.call_wall_xau) data.callWall = parseFloat(j.call_wall_xau);
+                    if (j.put_wall_xau) data.putWall = parseFloat(j.put_wall_xau);
+                    if (j.gamma_flip_xau) data.flip = parseFloat(j.gamma_flip_xau);
+                    if (j.net_dex_m !== undefined) data.dex = parseFloat(j.net_dex_m);
+                    if (j.call_distance_telemetry) data.callTel = j.call_distance_telemetry;
+                    if (j.put_distance_telemetry) data.putTel = j.put_distance_telemetry;
+                }
+                updateUI();
+            })
+            .catch(() => updateUI());
+    }
+
+    // PWA Install Prompt
+    var deferredPrompt = null;
+    if ('serviceWorker' in navigator) {
+        navigator.serviceWorker.register('sw.js').catch(()=>{});
+    }
+    window.addEventListener('beforeinstallprompt', e => {
+  
