@@ -4,11 +4,11 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>ARES-XAU | Institutional Gold Macro & Gamma Options Terminal</title>
-    <meta name="description" content="Sub-second Institutional Macro & Options Gamma Volatility Arbitrage Engine for Gold (XAU/USD).">
+    <meta name="description" content="Autonomous Sub-second Macro & Options Gamma Volatility Arbitrage Terminal for Gold (XAU/USD).">
     
-    <!-- PWA Setup -->
+    <!-- PWA Standard Metadata -->
     <link rel="manifest" href="manifest.json">
-    <meta name="theme-color" content="#f59e0b">
+    <meta name="theme-color" content="#06080d">
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
     <link rel="apple-touch-icon" href="https://assets.coingecko.com/coins/images/9576/large/paxg.png">
@@ -23,8 +23,9 @@
             --bg: #06080d;
             --surface-1: #0d111a;
             --surface-2: #141a27;
+            --surface-3: #1a2233;
             --surface-border: rgba(255, 255, 255, 0.08);
-            --surface-border-gold: rgba(245, 158, 11, 0.25);
+            --surface-border-gold: rgba(245, 158, 11, 0.28);
             --gold: #f59e0b;
             --gold-bright: #fbbf24;
             --gold-glow: rgba(245, 158, 11, 0.35);
@@ -40,7 +41,7 @@
             --font-serif: 'Cinzel', serif;
         }
 
-        * { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
+        * { box-sizing: border-box; margin: 0; padding: 0; scroll-behavior: smooth; -webkit-tap-highlight-color: transparent; }
         body {
             background-color: var(--bg);
             color: var(--text-main);
@@ -48,8 +49,8 @@
             line-height: 1.6;
             overflow-x: hidden;
             background-image: 
-                radial-gradient(ellipse 80% 50% at 50% -20%, rgba(245, 158, 11, 0.15), transparent),
-                radial-gradient(circle at 90% 80%, rgba(56, 189, 248, 0.04), transparent);
+                radial-gradient(ellipse 80% 50% at 50% -20%, rgba(245, 158, 11, 0.12), transparent),
+                radial-gradient(circle at 90% 80%, rgba(56, 189, 248, 0.03), transparent);
         }
 
         .bg-grid {
@@ -60,22 +61,34 @@
             pointer-events: none; z-index: 0;
         }
 
-        .container { max-width: 1200px; margin: 0 auto; padding: 0 20px; position: relative; z-index: 1; }
+        .container { max-width: 1240px; margin: 0 auto; padding: 0 20px; position: relative; z-index: 1; }
 
+        /* Sticky Glass Header */
+        header {
+            position: sticky; top: 0; z-index: 100;
+            backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px);
+            background: rgba(6, 8, 13, 0.85); border-bottom: 1px solid var(--surface-border);
+        }
         nav {
             display: flex; align-items: center; justify-content: space-between;
-            padding: 18px 0; border-bottom: 1px solid var(--surface-border);
+            padding: 14px 0; max-width: 1240px; margin: 0 auto; padding-left: 20px; padding-right: 20px;
         }
-        .brand { display: flex; align-items: center; gap: 12px; text-decoration: none; color: inherit; }
+        .brand { display: flex; align-items: center; gap: 10px; text-decoration: none; color: inherit; }
         .brand-badge {
-            width: 36px; height: 36px;
+            width: 34px; height: 34px;
             background: linear-gradient(135deg, var(--gold), #78350f);
             border-radius: 8px; display: flex; align-items: center; justify-content: center;
             font-weight: 800; color: #000; font-family: var(--font-serif);
-            box-shadow: 0 0 15px var(--gold-glow);
+            box-shadow: 0 0 15px var(--gold-glow); font-size: 16px;
         }
-        .brand-name { font-weight: 800; font-size: 18px; letter-spacing: -0.5px; }
+        .brand-name { font-weight: 800; font-size: 17px; letter-spacing: -0.5px; }
         .brand-name span { color: var(--gold); }
+        
+        .nav-links { display: flex; align-items: center; gap: 22px; list-style: none; }
+        .nav-links a { text-decoration: none; color: var(--text-muted); font-size: 13px; font-weight: 600; transition: color 0.2s; }
+        .nav-links a:hover { color: var(--gold-bright); }
+
+        .nav-actions { display: flex; align-items: center; gap: 10px; }
         .nav-status {
             display: flex; align-items: center; gap: 8px;
             background: rgba(16, 185, 129, 0.08); border: 1px solid rgba(16, 185, 129, 0.25);
@@ -83,11 +96,39 @@
             font-family: var(--font-mono); color: var(--green);
         }
         .live-dot {
-            width: 8px; height: 8px; background: var(--green);
-            border-radius: 50%; box-shadow: 0 0 10px var(--green); animation: pulse 1.8s infinite;
+            width: 7px; height: 7px; background: var(--green);
+            border-radius: 50%; box-shadow: 0 0 8px var(--green); animation: pulse 1.8s infinite;
         }
         @keyframes pulse { 0%, 100% { opacity: 1; transform: scale(1); } 50% { opacity: 0.3; } }
 
+        /* Ticker Tape */
+        .tape-wrapper {
+            width: 100%; overflow: hidden; background: #080b12;
+            border-bottom: 1px solid var(--surface-border); white-space: nowrap; padding: 7px 0;
+            font-family: var(--font-mono); font-size: 11px; color: var(--text-muted);
+        }
+        .tape-content {
+            display: inline-block; animation: scroll-tape 40s linear infinite;
+        }
+        @keyframes scroll-tape {
+            0% { transform: translateX(0); }
+            100% { transform: translateX(-50%); }
+        }
+        .tape-item { display: inline-flex; align-items: center; gap: 6px; margin: 0 16px; }
+
+        /* Buttons */
+        .btn {
+            display: inline-flex; align-items: center; gap: 8px;
+            padding: 10px 18px; border-radius: 8px; font-weight: 700; font-size: 12.5px;
+            text-decoration: none; transition: all 0.2s ease; cursor: pointer; border: none;
+            font-family: var(--font-main);
+        }
+        .btn-gold { background: linear-gradient(135deg, var(--gold), #d97706); color: #000; box-shadow: 0 4px 18px var(--gold-glow); }
+        .btn-gold:hover { transform: translateY(-1.5px); }
+        .btn-glass { background: var(--surface-1); border: 1px solid var(--surface-border); color: var(--text-main); }
+        .btn-glass:hover { background: var(--surface-2); border-color: rgba(255, 255, 255, 0.2); }
+
+        /* Hero */
         .hero { padding: 45px 0 30px; text-align: center; display: flex; flex-direction: column; align-items: center; }
         .hero-tag {
             display: inline-flex; align-items: center; gap: 8px;
@@ -97,48 +138,46 @@
             margin-bottom: 18px; text-transform: uppercase; letter-spacing: 1px;
         }
         .hero h1 {
-            font-size: clamp(28px, 5vw, 54px); font-weight: 800; line-height: 1.15;
-            letter-spacing: -1.2px; max-width: 850px;
+            font-size: clamp(28px, 4.5vw, 50px); font-weight: 800; line-height: 1.15;
+            letter-spacing: -1.2px; max-width: 880px;
             background: linear-gradient(180deg, #ffffff 40%, var(--text-muted) 100%);
-            -webkit-background-clip: text; -webkit-text-fill-color: transparent; margin-bottom: 16px;
+            -webkit-background-clip: text; -webkit-text-fill-color: transparent; margin-bottom: 14px;
         }
-        .hero p { font-size: clamp(14px, 1.8vw, 17px); color: var(--text-muted); max-width: 720px; margin-bottom: 26px; }
+        .hero p { font-size: clamp(14px, 1.8vw, 16px); color: var(--text-muted); max-width: 740px; margin-bottom: 24px; }
         .hero-cta { display: flex; gap: 12px; flex-wrap: wrap; justify-content: center; }
 
-        .btn {
-            display: inline-flex; align-items: center; gap: 8px;
-            padding: 12px 22px; border-radius: 10px; font-weight: 700; font-size: 13px;
-            text-decoration: none; transition: all 0.25s ease; cursor: pointer; border: none;
-            font-family: var(--font-main);
-        }
-        .btn-gold { background: linear-gradient(135deg, var(--gold), #d97706); color: #000; box-shadow: 0 4px 20px var(--gold-glow); }
-        .btn-gold:active { transform: scale(0.97); }
-        .btn-glass { background: var(--surface-1); border: 1px solid var(--surface-border); color: var(--text-main); }
-        .btn-glass:active { transform: scale(0.97); }
-
+        /* Live Metric Grid */
         .live-strip {
             display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
-            gap: 14px; margin-bottom: 28px;
+            gap: 14px; margin-bottom: 30px;
         }
         .strip-card {
             background: var(--surface-1); border: 1px solid var(--surface-border);
-            border-radius: 14px; padding: 18px;
+            border-radius: 12px; padding: 16px;
         }
         .strip-title {
             font-size: 11px; text-transform: uppercase; letter-spacing: 0.8px;
             color: var(--text-dim); font-family: var(--font-mono); display: flex;
             align-items: center; justify-content: space-between;
         }
-        .strip-val { font-size: 26px; font-weight: 800; font-family: var(--font-mono); margin: 8px 0 4px; }
-        .strip-sub { font-size: 12px; font-weight: 500; }
+        .strip-val { font-size: 25px; font-weight: 800; font-family: var(--font-mono); margin: 6px 0 2px; }
+        .strip-sub { font-size: 11.5px; font-weight: 500; }
 
+        /* Section Headings */
+        .section-header {
+            margin-bottom: 18px; display: flex; justify-content: space-between; align-items: flex-end;
+            border-bottom: 1px solid var(--surface-border); padding-bottom: 10px;
+        }
+        .section-title { font-size: 18px; font-weight: 800; letter-spacing: -0.3px; display: flex; align-items: center; gap: 8px; }
+        .section-subtitle { font-size: 12px; font-family: var(--font-mono); color: var(--text-dim); }
+
+        /* Grid Terminals */
         .chart-analytics-grid {
-            display: grid; grid-template-columns: 1.4fr 1fr; gap: 20px; margin-bottom: 30px;
+            display: grid; grid-template-columns: 1.4fr 1fr; gap: 20px; margin-bottom: 35px;
         }
         .terminal-panel {
             background: var(--surface-1); border: 1px solid var(--surface-border);
-            border-radius: 16px; padding: 18px; position: relative;
-            display: flex; flex-direction: column;
+            border-radius: 14px; padding: 18px; display: flex; flex-direction: column;
         }
         .panel-header {
             display: flex; justify-content: space-between; align-items: center;
@@ -146,8 +185,9 @@
             color: var(--text-muted); text-transform: uppercase; font-weight: 600;
         }
 
+        /* Corridor Visualizer */
         .corridor-container {
-            display: flex; flex-direction: column; gap: 14px; height: 100%; justify-content: center;
+            display: flex; flex-direction: column; gap: 12px; height: 100%; justify-content: center;
         }
         .wall-row {
             background: var(--surface-2); border: 1px solid rgba(255,255,255,0.05);
@@ -160,22 +200,69 @@
             height: 10px; background: #07090e; border-radius: 8px; position: relative; overflow: visible; margin: 15px 0 8px;
         }
         .progress-fill {
-            position: absolute; left: 15%; width: 70%; height: 100%;
+            position: absolute; left: 10%; width: 80%; height: 100%;
             background: linear-gradient(90deg, var(--green), var(--gold)); border-radius: 8px; opacity: 0.8;
         }
         .progress-spot {
-            position: absolute; left: 48%; top: -16px; transform: translateX(-50%);
+            position: absolute; left: 45%; top: -16px; transform: translateX(-50%);
             background: #fff; color: #000; font-family: var(--font-mono); font-size: 10px;
             font-weight: 800; padding: 2px 6px; border-radius: 4px; box-shadow: 0 0 10px #fff;
             white-space: nowrap;
         }
 
+        /* Macro Layer */
+        .macro-grid {
+            display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; margin-bottom: 35px;
+        }
+        .macro-card {
+            background: var(--surface-1); border: 1px solid var(--surface-border);
+            border-radius: 12px; padding: 16px;
+        }
+        .macro-metric { font-size: 22px; font-weight: 800; font-family: var(--font-mono); margin: 6px 0; }
+
+        /* Signal Ledger Table */
+        .ledger-container {
+            background: var(--surface-1); border: 1px solid var(--surface-border);
+            border-radius: 14px; overflow: hidden; margin-bottom: 35px;
+        }
+        .ledger-table {
+            width: 100%; border-collapse: collapse; font-size: 12.5px; text-align: left;
+        }
+        .ledger-table th {
+            background: var(--surface-2); padding: 12px 16px; font-family: var(--font-mono);
+            font-size: 11px; color: var(--text-dim); text-transform: uppercase; border-bottom: 1px solid var(--surface-border);
+        }
+        .ledger-table td {
+            padding: 12px 16px; border-bottom: 1px solid rgba(255,255,255,0.04); font-family: var(--font-mono);
+        }
+        .ledger-table tr:hover { background: rgba(255,255,255,0.02); }
+
+        .badge-buy { background: rgba(16,185,129,0.15); color: var(--green); padding: 3px 8px; border-radius: 4px; font-weight: 700; }
+        .badge-sell { background: rgba(244,63,94,0.15); color: var(--red); padding: 3px 8px; border-radius: 4px; font-weight: 700; }
+
+        /* Interactive Playground / Calculator */
+        .calc-panel {
+            background: var(--surface-1); border: 1px solid var(--surface-border-gold);
+            border-radius: 14px; padding: 20px; margin-bottom: 35px;
+        }
+        .calc-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
+        .calc-input {
+            width: 100%; background: #070a10; border: 1px solid var(--surface-border);
+            padding: 12px; border-radius: 8px; color: #fff; font-family: var(--font-mono);
+            font-size: 14px; margin-top: 6px;
+        }
+        .calc-output {
+            background: #070a10; border: 1px solid rgba(255,255,255,0.06);
+            border-radius: 8px; padding: 14px; font-family: var(--font-mono); font-size: 12.5px;
+        }
+
+        /* AI Synthesizer */
         .ai-card {
             background: linear-gradient(180deg, #101624 0%, var(--surface-1) 100%);
             border: 1px solid var(--surface-border-gold); border-radius: 16px;
-            padding: 22px; margin-bottom: 35px; box-shadow: 0 8px 30px rgba(0,0,0,0.4);
+            padding: 22px; margin-bottom: 35px;
         }
-        .ai-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 14px; flex-wrap: wrap; gap: 10px; }
+        .ai-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 14px; }
         .ai-title { display: flex; align-items: center; gap: 8px; font-weight: 800; font-size: 15px; color: var(--gold-bright); }
         .ai-badge { font-family: var(--font-mono); font-size: 11px; color: var(--green); background: rgba(16,185,129,0.1); padding: 3px 8px; border-radius: 6px; }
         .ai-output-box {
@@ -186,8 +273,9 @@
 
         footer { border-top: 1px solid var(--surface-border); padding: 25px 0; text-align: center; font-size: 11px; color: var(--text-dim); font-family: var(--font-mono); }
 
-        @media (max-width: 850px) {
-            .chart-analytics-grid { grid-template-columns: 1fr; }
+        @media (max-width: 900px) {
+            .chart-analytics-grid, .macro-grid, .calc-grid { grid-template-columns: 1fr; }
+            .nav-links { display: none; }
         }
     </style>
 </head>
@@ -195,44 +283,79 @@
 
 <div class="bg-grid"></div>
 
-<div class="container">
+<!-- Top Sticky Navigation -->
+<header>
     <nav>
         <a href="#" class="brand">
             <div class="brand-badge">Ω</div>
             <div class="brand-name">ARES<span>QUANT</span></div>
         </a>
-        <div class="nav-status">
-            <div class="live-dot"></div>
-            <span id="sync-status">ENGINE: SYNCHRONIZING</span>
+
+        <ul class="nav-links">
+            <li><a href="#terminal">Terminal</a></li>
+            <li><a href="#corridors">Gamma Corridors</a></li>
+            <li><a href="#macro">Macro Radar</a></li>
+            <li><a href="#signals">Signal Ledger</a></li>
+            <li><a href="#calculator">Execution Lab</a></li>
+        </ul>
+
+        <div class="nav-actions">
+            <div class="nav-status">
+                <div class="live-dot"></div>
+                <span id="sync-status">LIVE SYNC</span>
+            </div>
+            <button type="button" id="pwa-install-btn" class="btn btn-glass" style="padding: 7px 12px; font-size: 11px;">
+                <span>📱</span> Install App
+            </button>
         </div>
     </nav>
+</header>
 
-    <!-- Hero -->
-    <section class="hero">
+<!-- Horizontal Running Ticker Tape -->
+<div class="tape-wrapper">
+    <div class="tape-content">
+        <div class="tape-item"><span>CME GC1! SPOT:</span> <b style="color:var(--gold);">$4,351.80</b></div>
+        <div class="tape-item"><span>CONTANGO BASIS:</span> <b style="color:var(--green);">+$59.10</b></div>
+        <div class="tape-item"><span>DEALER NET DEX:</span> <b style="color:var(--red);">-615.1M</b></div>
+        <div class="tape-item"><span>US10Y YIELD:</span> <b style="color:var(--red);">4.92% (BEARISH HEADWIND)</b></div>
+        <div class="tape-item"><span>FED TIPS REAL YIELD:</span> <b style="color:var(--blue);">+2.14%</b></div>
+        <div class="tape-item"><span>MARKET REGIME:</span> <b style="color:var(--gold);">LONG GAMMA PIN DECAY</b></div>
+        <div class="tape-item"><span>GATEKEEPER FILTER:</span> <b style="color:var(--green);">ACTIVE (MIN RR 1:1.30)</b></div>
+        <!-- Duplicated for continuous loop -->
+        <div class="tape-item"><span>CME GC1! SPOT:</span> <b style="color:var(--gold);">$4,351.80</b></div>
+        <div class="tape-item"><span>CONTANGO BASIS:</span> <b style="color:var(--green);">+$59.10</b></div>
+        <div class="tape-item"><span>DEALER NET DEX:</span> <b style="color:var(--red);">-615.1M</b></div>
+        <div class="tape-item"><span>US10Y YIELD:</span> <b style="color:var(--red);">4.92% (BEARISH HEADWIND)</b></div>
+    </div>
+</div>
+
+<div class="container">
+    <!-- Hero Header -->
+    <section class="hero" id="terminal">
         <div class="hero-tag">
-            <span>⚡ Institutional Gold Execution Layer</span>
+            <span>⚡ Institutional Gold Execution Architecture</span>
         </div>
-        <h1>Sub-Second Options Gamma & Macro Arbitrage</h1>
+        <h1>Autonomous Options Gamma & Macro Parity Terminal</h1>
         <p>
-            Autonomous quantitative telemetry orchestrating CME Gold Futures (GC1!), London Strategic Edge (LSE) US10Y bond yields, and dealer Gamma Exposure corridors with zero human discretion.
+            Sub-second algorithmic arbitration orchestrating CME Gold Futures (GC1!), London Strategic Edge (LSE) US10Y bond telemetry, and dealer Gamma Exposure corridors.
         </p>
         <div class="hero-cta">
             <a href="https://gold-macro-dashboard-5vuz6kxl25bappkbsjnisr7.streamlit.app/" target="_blank" class="btn btn-gold">
-                <span>📊</span> Launch Terminal
+                <span>📊</span> Streamlit Terminal
             </a>
             <a href="https://t.me/X_M_A_E_bot" target="_blank" class="btn btn-glass">
                 <span>📡</span> Telegram Radar
             </a>
-            <button type="button" id="pwa-install-btn" class="btn btn-glass">
-                <span>📱</span> Install Mobile App
-            </button>
+            <a href="#calculator" class="btn btn-glass">
+                <span>⚙️</span> Execution Simulator
+            </a>
         </div>
     </section>
 
-    <!-- Metrics Strip -->
+    <!-- Metrics Matrix Strip -->
     <section class="live-strip">
         <div class="strip-card">
-            <div class="strip-title"><span>CME Spot Parity</span><span style="color:var(--gold);">REAL-TIME</span></div>
+            <div class="strip-title"><span>CME Spot Parity</span><span style="color:var(--gold);">GC1! TAPE</span></div>
             <div class="strip-val" id="val-spot">$4,351.80</div>
             <div class="strip-sub" style="color:var(--green);"><span id="val-spot-sub">▲ Sourced via Live Tape</span></div>
         </div>
@@ -253,130 +376,14 @@
         </div>
     </section>
 
-    <!-- Real-Time Chart & GEX Corridor -->
+    <!-- Terminal Layer: TradingView + Gamma Corridors -->
+    <div class="section-header" id="corridors">
+        <div class="section-title"><span>🧱</span> Institutional Gamma Corridors & Spot Chart</div>
+        <div class="section-subtitle">REAL-TIME OANDA / CME GC1! ARBITRAGE</div>
+    </div>
+
     <section class="chart-analytics-grid">
         <div class="terminal-panel">
             <div class="panel-header">
                 <span>Gold Spot Live Tape (XAU/USD)</span>
-                <span style="color:var(--gold);">REAL-TIME CANDLES</span>
-            </div>
-            <div style="height: 380px; width: 100%;">
-                <div class="tradingview-widget-container" style="height:100%;width:100%">
-                    <iframe scrolling="no" allowtransparency="true" frameborder="0" style="user-select: none; box-sizing: border-box; display: block; height: 100%; width: 100%; border-radius: 8px;" src="https://s.tradingview.com/widgetembed/?frameElementId=tradingview_widget&symbol=OANDA%3AXAUUSD&interval=30&hidesidetoolbar=1&symboledit=0&saveimage=0&toolbarbg=06080d&studies=%5B%5D&theme=dark&style=1&timezone=exchange&withdateranges=0&showpopupbutton=0&locale=en"></iframe>
-                </div>
-            </div>
-        </div>
-
-        <div class="terminal-panel">
-            <div class="panel-header">
-                <span>Institutional Gamma Corridors</span>
-                <span style="color:var(--green);">GEX RESOLUTION</span>
-            </div>
-            <div class="corridor-container">
-                <div class="wall-row" style="border-left: 3px solid var(--red);">
-                    <div>
-                        <div class="wall-title">Dealer Call Wall (Ceiling)</div>
-                        <div style="font-size: 11px; color: var(--text-dim);" id="label-call-dist">Call: +$52.41</div>
-                    </div>
-                    <div class="wall-val" style="color: var(--red);" id="live-call-wall">$4,404.21</div>
-                </div>
-
-                <div class="progress-track">
-                    <div class="progress-fill" id="corridor-track-fill"></div>
-                    <div class="progress-spot" id="corridor-spot-marker">SPOT $4,351.80</div>
-                </div>
-                <div style="display: flex; justify-content: space-between; font-family: var(--font-mono); font-size: 11px; color: var(--text-dim);">
-                    <span id="range-put-label">Put Wall $4,294.10</span>
-                    <span id="range-call-label">Call Wall $4,404.21</span>
-                </div>
-
-                <div class="wall-row" style="border-left: 3px solid var(--green);">
-                    <div>
-                        <div class="wall-title">Dealer Put Wall (Floor)</div>
-                        <div style="font-size: 11px; color: var(--text-dim);" id="label-put-dist">Put: +$57.70</div>
-                    </div>
-                    <div class="wall-val" style="color: var(--green);" id="live-put-wall">$4,294.10</div>
-                </div>
-
-                <div class="wall-row" style="border-left: 3px solid var(--gold);">
-                    <div>
-                        <div class="wall-title">Gamma Flip Pivot</div>
-                        <div style="font-size: 11px; color: var(--text-dim);">Regime Shift Boundary</div>
-                    </div>
-                    <div class="wall-val" style="color: var(--gold);" id="live-gamma-flip">$2,202.11</div>
-                </div>
-
-                <div class="wall-row" style="border-left: 3px solid var(--blue);">
-                    <div>
-                        <div class="wall-title">Gatekeeper Execution State</div>
-                        <div style="font-size: 11px; color: var(--text-dim);">Corridor Boundary Status</div>
-                    </div>
-                    <div class="wall-val" style="color: var(--green); font-size: 12px;" id="live-gatekeeper-status">CORRIDOR CLEAR</div>
-                </div>
-            </div>
-        </div>
-    </section>
-
-    <!-- AI Systematic Verdict Copilot -->
-    <section class="ai-card">
-        <div class="ai-header">
-            <div class="ai-title">
-                <span>🤖</span> ARES Institutional AI Synthesizer
-            </div>
-            <div class="ai-badge">STATUS: LIVE QUANT HEURISTIC</div>
-        </div>
-        <p style="font-size: 13px; color: var(--text-muted); margin-bottom: 14px;">
-            Synthesize live macroeconomic yield pressures, dealer Gamma corridors, and spot parity into an institutional execution plan:
-        </p>
-        <div style="margin-bottom: 16px;">
-            <button type="button" id="btn-synthesis" class="btn btn-gold" style="width: 100%; justify-content: center; padding: 14px;">
-                <span>⚡</span> Run Quant Synthesis
-            </button>
-        </div>
-        <div class="ai-output-box" id="ai-output">
-            <b>System Engine Pre-Evaluation:</b><br>
-            US 10Y yields (+4.92%) continue to exert macro headwinds while Dealer Net DEX has tilted negative (-615.1M). As spot trades near $4,351.80 inside the $4,294.10 – $4,404.21 corridor, systematic pullback models favor disciplined liquidity expansions.
-        </div>
-    </section>
-
-    <footer>
-        <p>ARES-XAU SYSTEMATIC QUANT ENGINE • AUTONOMOUS GITHUB ACTIONS CI/CD • REPO: PARFACTMATCH-CLOUD</p>
-    </footer>
-</div>
-
-<script>
-    // State Store with Live Pulse Defaults
-    var currentMetrics = {
-        spot: 4351.80,
-        callWall: 4404.21,
-        putWall: 4294.10,
-        flip: 2202.11,
-        netDex: -615.1,
-        yieldVal: 4.92,
-        regime: "LONG_GAMMA_MEAN_REVERT",
-        isValid: true,
-        callTel: "Call: +$52.41",
-        putTel: "Put: +$57.70"
-    };
-
-    // DOM Updater
-    function applyDOMUpdates() {
-        try {
-            document.getElementById('val-spot').innerText = '$' + currentMetrics.spot.toFixed(2);
-            
-            var dexEl = document.getElementById('val-dex');
-            dexEl.innerText = (currentMetrics.netDex > 0 ? '+' : '') + currentMetrics.netDex.toFixed(1) + 'M';
-            dexEl.style.color = currentMetrics.netDex >= 0 ? 'var(--green)' : 'var(--red)';
-            document.getElementById('val-dex-sub').innerText = currentMetrics.netDex >= 0 ? 'Dealers Net Long Delta' : 'Dealers Net Short Delta';
-
-            document.getElementById('val-yield').innerText = currentMetrics.yieldVal.toFixed(2) + '%';
-            document.getElementById('val-regime').innerText = currentMetrics.regime.indexOf('LONG') !== -1 ? 'LONG GAMMA' : 'SHORT GAMMA';
-
-            document.getElementById('live-call-wall').innerText = '$' + currentMetrics.callWall.toFixed(2);
-            document.getElementById('live-put-wall').innerText = '$' + currentMetrics.putWall.toFixed(2);
-            document.getElementById('range-call-label').innerText = 'Call Wall $' + currentMetrics.callWall.toFixed(2);
-            document.getElementById('range-put-label').innerText = 'Put Wall $' + currentMetrics.putWall.toFixed(2);
-            document.getElementById('live-gamma-flip').innerText = '$' + currentMetrics.flip.toFixed(2);
-            
-            document.getElementById('label-call-dist').innerText = currentMetrics.callTel;
-    
+                <span style="co
