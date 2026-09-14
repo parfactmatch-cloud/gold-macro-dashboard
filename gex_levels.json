@@ -1,13 +1,13 @@
 {
-  "timestamp_utc": "2026-09-14 03:52:01 UTC",
+  "timestamp_utc": "2026-09-14 09:39:48 UTC",
   "status": "HEALTHY",
-  "spot_xau": 4367.5,
+  "spot_xau": 4327.0,
   "gld_close": 398.77,
-  "conv_ratio": 10.9524,
-  "call_wall_xau": 4545.26,
-  "put_wall_xau": 4380.97,
-  "gamma_flip_xau": 2190.49,
-  "net_dex_m": 1410.5,
+  "conv_ratio": 10.8509,
+  "call_wall_xau": 3711.0,
+  "put_wall_xau": 2224.43,
+  "gamma_flip_xau": 2224.43,
+  "net_dex_m": 95.27,
   "net_gamma_regime": "LONG_GAMMA_MEAN_REVERT",
   "gamma_blast_active": false
 }
