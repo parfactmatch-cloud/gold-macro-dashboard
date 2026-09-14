@@ -164,9 +164,10 @@
             background: linear-gradient(90deg, var(--green), var(--gold)); border-radius: 8px; opacity: 0.8;
         }
         .progress-spot {
-            position: absolute; left: 30%; top: -16px; transform: translateX(-50%);
+            position: absolute; left: 48%; top: -16px; transform: translateX(-50%);
             background: #fff; color: #000; font-family: var(--font-mono); font-size: 10px;
             font-weight: 800; padding: 2px 6px; border-radius: 4px; box-shadow: 0 0 10px #fff;
+            white-space: nowrap;
         }
 
         /* AI Copilot Terminal (Zero-Key) */
@@ -203,7 +204,7 @@
         </a>
         <div class="nav-status">
             <div class="live-dot"></div>
-            <span>ENGINE: ACTIVE</span>
+            <span id="sync-status">ENGINE: SYNCHRONIZING</span>
         </div>
     </nav>
 
@@ -217,15 +218,12 @@
             Autonomous quantitative telemetry orchestrating CME Gold Futures (GC1!), London Strategic Edge (LSE) US10Y bond yields, and dealer Gamma Exposure corridors with zero human discretion.
         </p>
         <div class="hero-cta">
-            <!-- Exact Working Streamlit Dashboard Link -->
             <a href="https://gold-macro-dashboard-5vuz6kxl25bappkbsjnisr7.streamlit.app/" target="_blank" class="btn btn-gold">
                 <span>📊</span> Launch Terminal
             </a>
-            <!-- Direct Working Telegram Bot Link -->
             <a href="https://t.me/X_M_A_E_bot" target="_blank" class="btn btn-glass">
                 <span>📡</span> Telegram Radar
             </a>
-            <!-- PWA Native Install Button -->
             <button id="pwa-install-btn" class="btn btn-glass" onclick="triggerPWAInstall()">
                 <span>📱</span> Install Mobile App
             </button>
@@ -236,18 +234,18 @@
     <section class="live-strip">
         <div class="strip-card">
             <div class="strip-title"><span>CME Spot Parity</span><span style="color:var(--gold);">REAL-TIME</span></div>
-            <div class="strip-val" id="val-spot">$4,408.90</div>
-            <div class="strip-sub" style="color:var(--green);"><span>▲ Contango +$59 vs OANDA</span></div>
+            <div class="strip-val" id="val-spot">$4,351.80</div>
+            <div class="strip-sub" style="color:var(--green);"><span id="val-spot-sub">▲ Sourced via Live Tape</span></div>
         </div>
         <div class="strip-card">
-            <div class="strip-title"><span>Dealer Net DEX Tilt</span><span style="color:var(--green);">INVENTORY</span></div>
-            <div class="strip-val" id="val-dex" style="color:var(--green);">+1,585.8M</div>
-            <div class="strip-sub" style="color:var(--text-muted);"><span>Dealers Net Long Delta</span></div>
+            <div class="strip-title"><span>Dealer Net DEX Tilt</span><span style="color:var(--green);" id="val-dex-tag">INVENTORY</span></div>
+            <div class="strip-val" id="val-dex" style="color:var(--red);">-615.1M</div>
+            <div class="strip-sub" style="color:var(--text-muted);"><span id="val-dex-sub">Dealers Net Short Delta</span></div>
         </div>
         <div class="strip-card">
             <div class="strip-title"><span>US10Y Yield Vector</span><span style="color:var(--red);">HEADWIND</span></div>
             <div class="strip-val" id="val-yield" style="color:var(--red);">4.92%</div>
-            <div class="strip-sub" style="color:var(--red);"><span>Bearish Macro Driver</span></div>
+            <div class="strip-sub" style="color:var(--red);"><span id="val-yield-sub">Bearish Macro Driver</span></div>
         </div>
         <div class="strip-card">
             <div class="strip-title"><span>Dealer Gamma Regime</span><span style="color:var(--gold);">VOLATILITY</span></div>
@@ -256,7 +254,7 @@
         </div>
     </section>
 
-    <!-- Working Real-Time Chart & GEX Corridor (No Apple Bug) -->
+    <!-- Real-Time Chart & Dynamic GEX Corridor -->
     <section class="chart-analytics-grid">
         <!-- Embedded Real-Time TradingView Gold Spot Chart -->
         <div class="terminal-panel">
@@ -271,7 +269,7 @@
             </div>
         </div>
 
-        <!-- Interactive GEX Corridor & Strike Exposure Ledger -->
+        <!-- Dynamic GEX Corridor & Strike Exposure Ledger -->
         <div class="terminal-panel">
             <div class="panel-header">
                 <span>Institutional Gamma Corridors</span>
@@ -281,26 +279,26 @@
                 <div class="wall-row" style="border-left: 3px solid var(--red);">
                     <div>
                         <div class="wall-title">Dealer Call Wall (Ceiling)</div>
-                        <div style="font-size: 11px; color: var(--text-dim);">Dealer Short Calls Gamma Pin</div>
+                        <div style="font-size: 11px; color: var(--text-dim);" id="label-call-dist">Call: +$52.41</div>
                     </div>
-                    <div class="wall-val" style="color: var(--red);">$4,588.34</div>
+                    <div class="wall-val" style="color: var(--red);" id="live-call-wall">$4,404.21</div>
                 </div>
 
                 <div class="progress-track">
-                    <div class="progress-fill"></div>
-                    <div class="progress-spot">SPOT $4,408.90</div>
+                    <div class="progress-fill" id="corridor-track-fill"></div>
+                    <div class="progress-spot" id="corridor-spot-marker">SPOT $4,351.80</div>
                 </div>
                 <div style="display: flex; justify-content: space-between; font-family: var(--font-mono); font-size: 11px; color: var(--text-dim);">
-                    <span>Put Wall $4,422.50</span>
-                    <span>Call Wall $4,588.34</span>
+                    <span id="range-put-label">Put Wall $4,294.10</span>
+                    <span id="range-call-label">Call Wall $4,404.21</span>
                 </div>
 
                 <div class="wall-row" style="border-left: 3px solid var(--green);">
                     <div>
                         <div class="wall-title">Dealer Put Wall (Floor)</div>
-                        <div style="font-size: 11px; color: var(--text-dim);">Aggressive Floor Absorption</div>
+                        <div style="font-size: 11px; color: var(--text-dim);" id="label-put-dist">Put: +$57.70</div>
                     </div>
-                    <div class="wall-val" style="color: var(--green);">$4,422.50</div>
+                    <div class="wall-val" style="color: var(--green);" id="live-put-wall">$4,294.10</div>
                 </div>
 
                 <div class="wall-row" style="border-left: 3px solid var(--gold);">
@@ -308,21 +306,21 @@
                         <div class="wall-title">Gamma Flip Pivot</div>
                         <div style="font-size: 11px; color: var(--text-dim);">Regime Shift Boundary</div>
                     </div>
-                    <div class="wall-val" style="color: var(--gold);">$2,211.25</div>
+                    <div class="wall-val" style="color: var(--gold);" id="live-gamma-flip">$2,202.11</div>
                 </div>
 
                 <div class="wall-row" style="border-left: 3px solid var(--blue);">
                     <div>
                         <div class="wall-title">Gatekeeper Execution State</div>
-                        <div style="font-size: 11px; color: var(--text-dim);">Risk Filter Status</div>
+                        <div style="font-size: 11px; color: var(--text-dim);">Corridor Boundary Status</div>
                     </div>
-                    <div class="wall-val" style="color: var(--green); font-size: 13px;">CONDITIONAL LONG ONLY</div>
+                    <div class="wall-val" style="color: var(--green); font-size: 12px;" id="live-gatekeeper-status">CORRIDOR CLEAR</div>
                 </div>
             </div>
         </div>
     </section>
 
-    <!-- AI Systematic Verdict Copilot (1-Click Built-in Engine) -->
+    <!-- AI Systematic Verdict Copilot (Dynamic Data Ingesting Engine) -->
     <section class="ai-card">
         <div class="ai-header">
             <div class="ai-title">
@@ -340,7 +338,7 @@
         </div>
         <div class="ai-output-box" id="ai-output">
             <b>System Engine Pre-Evaluation:</b><br>
-            US 10Y yields (+4.92%) continue to exert systematic macro headwinds. However, options market makers are positioned in <b>Long Gamma with +1,585.8M Net DEX</b>. As price navigates near the Put Wall boundary ($4,422.50), dealer hedging mechanics trigger aggressive liquidity absorption. <b>Downside breakout shorting is strictly suppressed by the Gatekeeper</b> to prevent bear traps. Higher probability edge lies in structured mean-reversion pullbacks towards equilibrium ($4,445–$4,460).
+            US 10Y yields (+4.92%) continue to exert macro headwinds while Dealer Net DEX has tilted negative (-615.1M). As spot trades near $4,351.80 inside the $4,294.10 – $4,404.21 corridor, systematic pullback models favor disciplined liquidity expansions.
         </div>
     </section>
 
@@ -350,35 +348,36 @@
 </div>
 
 <script>
-    // 1. PWA Install Handler
-    let deferredPrompt;
-    window.addEventListener('beforeinstallprompt', (e) => {
-        e.preventDefault();
-        deferredPrompt = e;
-    });
+    // 1. Dynamic State Store
+    let currentMetrics = {
+        spot: 4351.80,
+        callWall: 4404.21,
+        putWall: 4294.10,
+        flip: 2202.11,
+        netDex: -615.1,
+        yieldVal: 4.92,
+        regime: "LONG_GAMMA_MEAN_REVERT",
+        isValid: true,
+        callTel: "Call: +$52.41",
+        putTel: "Put: +$57.70"
+    };
 
-    function triggerPWAInstall() {
-        if (deferredPrompt) {
-            deferredPrompt.prompt();
-            deferredPrompt.userChoice.then((choiceResult) => {
-                deferredPrompt = null;
-            });
-        } else {
-            alert('To install app: Tap browser settings (3 dots at top-right) -> "Install App" or "Add to Home screen".');
-        }
-    }
+    // 2. Cache-Busted GitHub Raw Sync
+    async function syncDynamicTelemetry() {
+        const timestamp = new Date().getTime();
+        const jsonUrl = `https://raw.githubusercontent.com/parfactmatch-cloud/gold-macro-dashboard/main/gex_levels.json?nocache=${timestamp}`;
+        const csvUrl = `https://raw.githubusercontent.com/parfactmatch-cloud/gold-macro-dashboard/main/lse_macro.csv?nocache=${timestamp}`;
 
-    if ('serviceWorker' in navigator) {
-        navigator.serviceWorker.register('sw.js').catch(() => {});
-    }
-
-    // 2. Direct 1-Click Quant AI Synthesizer (No API Key Required)
-    function generateAIVerdict() {
-        const out = document.getElementById('ai-output');
-        out.innerHTML = '<i>⚡ Synthesizing live LSE Bond Yields (4.92%), CME Basis Spread, and Dealer Gamma Exposure corridors...</i>';
-
-        setTimeout(() => {
-            out.innerHTML = `<b>🤖 Institutional Risk & Quantitative Execution Plan:</b><br><br>
-• <b>Regime Classification</b>: <b>Long Gamma Floor Defense</b>. US10Y yields (4.92%) create macro ceiling pressure, but dealers are net long delta (+1,585.8M) actively dampening downside volatility around the Put Wall ($4,422.50).<br>
-• <b>Gatekeeper Risk Action</b>: <b>Breakout Shorting is STRICTLY REJECTED</b>. Spot ($4,408.90) is positioned inside the dealer floor inventory band. Chasing down-moves here creates extreme bear-squeeze risk.<br>
-• <b>High-Conviction Playbook</b>: Accumulate mean-reversion 
+        try {
+            // Fetch GEX Levels
+            const resGex = await fetch(jsonUrl);
+            if (resGex.ok) {
+                const data = await resGex.json();
+                if (data.spot_xau) currentMetrics.spot = parseFloat(data.spot_xau);
+                if (data.call_wall_xau) currentMetrics.callWall = parseFloat(data.call_wall_xau);
+                if (data.put_wall_xau) currentMetrics.putWall = parseFloat(data.put_wall_xau);
+                if (data.gamma_flip_xau) currentMetrics.flip = parseFloat(data.gamma_flip_xau);
+                if (data.net_dex_m !== undefined) currentMetrics.netDex = parseFloat(data.net_dex_m);
+                if (data.net_gamma_regime) currentMetrics.regime = data.net_gamma_regime;
+                if (data.call_distance_telemetry) currentMetrics.callTel = data.call_distance_telemetry;
+                if (data.put_distance_telemetry) currentMetrics.putTel = data.put_distance_telemetr
