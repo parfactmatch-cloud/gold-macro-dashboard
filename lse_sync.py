@@ -4,7 +4,7 @@ LSE Isolated Macro & Options GEX/DEX Sync Engine
 - Computes SPDR Gold Shares (GLD) dealer Gamma Walls, Net DEX & Blast Squeeze -> saves to 'gex_levels.json'
 - Multi-Source Spot Feed: CME Futures (GC=F) -> Stooq XAUUSD -> Binance PAXGUSDT -> GLD NAV
 - Regime-agnostic: Directly supports CME GC1! $4,400+ pricing without static baseline truncations
-- Periodic Radar Telemetry: Bulletproof HTML Telegram dispatch with plain-text fallback
+- Periodic Radar Telemetry: Bulletproof HTML Telegram dispatch with clean mathematical distance telemetry
 """
 
 import os
@@ -15,7 +15,7 @@ from datetime import datetime, timezone
 # GEX & DEX Engine Import (free_gex_engine.py must reside in the same execution path)
 from free_gex_engine import GoldGEXEngine
 
-# Telegram Engine Broadcast Import with Fallback Handling
+# Centralized Telegram Engine Broadcast Import with Fallback Handling
 try:
     from telegram_engine import broadcast_market_pulse
 except ImportError:
@@ -34,25 +34,38 @@ TELEGRAM_CHAT_ID = (
 ).strip()
 LSE_MACRO_FILE = "lse_macro.csv"
 
-def send_direct_telegram_pulse(spot: float, call_wall: float, put_wall: float, gamma_flip: float, regime: str, us10y_yield: float, us10y_impact: str, net_dex: float = 0.0, blast_active: bool = False):
-    """Direct, robust HTML Telegram dispatcher that prevents entity parse errors."""
+def send_direct_telegram_pulse(
+    spot: float,
+    call_wall: float,
+    put_wall: float,
+    gamma_flip: float,
+    regime: str,
+    us10y_yield: float,
+    us10y_impact: str,
+    net_dex: float = 0.0,
+    blast_active: bool = False,
+    telemetry_call: str = "Call: N/A",
+    telemetry_put: str = "Put: N/A",
+    is_corridor_valid: bool = True
+):
+    """Direct, robust HTML Telegram dispatcher that prevents double-negative glitches & entity parse errors."""
     print(f"[TG AUTH CHECK] Token configured: {bool(TELEGRAM_BOT_TOKEN)} | Chat ID configured: {bool(TELEGRAM_CHAT_ID)}")
     if not TELEGRAM_BOT_TOKEN or not TELEGRAM_CHAT_ID:
-        print("[TG CRITICAL] TELEGRAM_BOT_TOKEN or TELEGRAM_CHAT_ID is missing from GitHub environment variables!")
+        print("[TG CRITICAL] TELEGRAM_BOT_TOKEN or TELEGRAM_CHAT_ID is missing from environment variables!")
         return
 
     now_utc = datetime.now(timezone.utc).strftime("%H:%M UTC | %d %b %Y")
-    dist_call = call_wall - spot
-    dist_put = spot - put_wall
 
+    # Corridor and Barrier Status Calculation using Patched Absolute Boundaries
     if blast_active:
         barrier_status = "🚀 <b>GAMMA BLAST REGIME</b>: High directional flow detected. Dealer walls in squeeze bypass mode."
-    elif 0 <= dist_call <= 5.0:
-        barrier_status = f"⚠️ <b>PROXIMITY WARNING</b>: Spot testing Call Wall (${call_wall:.2f}) [Distance: ${dist_call:.2f}]"
-    elif 0 <= dist_put <= 5.0:
-        barrier_status = f"⚠️ <b>PROXIMITY WARNING</b>: Spot testing Put Wall (${put_wall:.2f}) [Distance: ${dist_put:.2f}]"
+    elif not is_corridor_valid or spot < put_wall or spot > call_wall:
+        if spot <= put_wall:
+            barrier_status = f"🔴 <b>PUT WALL BREACHED</b>: Spot trading below floor (${put_wall:.2f}) [Depth: {telemetry_put}]"
+        else:
+            barrier_status = f"🚀 <b>CALL WALL SQUEEZE</b>: Spot trading above ceiling (${call_wall:.2f}) [Exceed: {telemetry_call}]"
     else:
-        barrier_status = f"🟢 <b>CORRIDOR CLEAR</b>: Spot inside boundaries (Call: +${dist_call:.2f} | Put: -${dist_put:.2f})"
+        barrier_status = f"🟢 <b>CORRIDOR CLEAR</b>: Spot inside boundaries ({telemetry_call} | {telemetry_put})"
 
     regime_tag = "🟩 LONG GAMMA (Mean-Reverting)" if "LONG_GAMMA" in regime else "🟥 SHORT GAMMA (Volatility Expansion)"
     macro_icon = "🟢" if us10y_impact == "BULLISH_TAILWIND" else ("🔴" if us10y_impact == "BEARISH_PRESSURE" else "⚪")
@@ -91,12 +104,13 @@ def send_direct_telegram_pulse(spot: float, call_wall: float, put_wall: float, g
 
     # Fallback attempt: Clean Plain Text
     try:
+        clean_status = barrier_status.replace('<b>', '').replace('</b>', '')
         raw_text = (
             f"📡 INSTITUTIONAL MARKET RADAR PULSE\n"
             f"Spot: ${spot:.2f} | US10Y: {us10y_yield:.2f}% ({us10y_impact})\n"
             f"Call Wall: ${call_wall:.2f} | Put Wall: ${put_wall:.2f} | Flip: ${gamma_flip:.2f}\n"
             f"Net DEX: {net_dex:+.1f}M | Blast Active: {blast_active}\n"
-            f"Status: {barrier_status.replace('<b>','').replace('</b>','')}\n"
+            f"Status: {clean_status}\n"
             f"Synced: {now_utc}"
         )
         res2 = requests.post(url, json={"chat_id": TELEGRAM_CHAT_ID, "text": raw_text}, timeout=10)
@@ -125,8 +139,7 @@ def fetch_lse_series(symbol="US10Y", limit=10):
         if res.status_code == 200:
             data = res.json()
             if isinstance(data, list) and len(data) > 0:
-                df = pd.DataFrame(data)
-                return df
+                return pd.DataFrame(data)
         print(f"[LSE HTTP ERROR] Status {res.status_code}: {res.text}")
         return None
     except Exception as e:
@@ -138,7 +151,7 @@ def fetch_live_gold_spot() -> float:
     Regime-agnostic Spot & Futures Gold resolution.
     Directly aligns with CME GC1! ($4,400+ regime) and Spot XAU/USD.
     """
-    # 1. Primary: CME Continuous Gold Futures (GC=F) with Browser Session & 7-day Buffer
+    # 1. Primary: CME Continuous Gold Futures (GC=F) with Session & 7-day Buffer
     try:
         import yfinance as yf
         session = requests.Session()
@@ -212,7 +225,7 @@ def sync_gex(spot_price: float):
             f"Put Wall: {gex_data.get('put_wall_xau')} | "
             f"Flip: {gex_data.get('gamma_flip_xau')} | "
             f"Net DEX: {gex_data.get('net_dex_m'):+.1f}M | "
-            f"Blast Active: {gex_data.get('gamma_blast_active')} | "
+            f"Telemetry: {gex_data.get('call_distance_telemetry')} / {gex_data.get('put_distance_telemetry')} | "
             f"Status: {gex_data.get('status')}"
         )
         return gex_data
@@ -255,20 +268,58 @@ def run_sync():
     # 3. Guaranteed Periodic Market Radar Telemetry Dispatch
     print("[PULSE DISPATCH] Initiating Telegram Pulse Trigger...")
     if gex_data and gex_data.get("status") in ["HEALTHY", "FALLBACK_DEGRADED"]:
-        send_direct_telegram_pulse(
-            spot=spot_xau,
-            call_wall=float(gex_data.get("call_wall_xau", 0.0)),
-            put_wall=float(gex_data.get("put_wall_xau", 0.0)),
-            gamma_flip=float(gex_data.get("gamma_flip_xau", 0.0)),
-            regime=str(gex_data.get("net_gamma_regime", "UNKNOWN")),
-            us10y_yield=latest_val,
-            us10y_impact=gold_macro_impact,
-            net_dex=float(gex_data.get("net_dex_m", 0.0)),
-            blast_active=bool(gex_data.get("gamma_blast_active", False))
-        )
+        call_wall = float(gex_data.get("call_wall_xau", 0.0))
+        put_wall = float(gex_data.get("put_wall_xau", 0.0))
+        gamma_flip = float(gex_data.get("gamma_flip_xau", 0.0))
+        regime = str(gex_data.get("net_gamma_regime", "UNKNOWN"))
+        net_dex = float(gex_data.get("net_dex_m", 0.0))
+        blast_active = bool(gex_data.get("gamma_blast_active", False))
+        
+        # Pull clean pre-computed telemetry strings from patch
+        telemetry_call = str(gex_data.get("call_distance_telemetry", f"Call: +${abs(call_wall - spot_xau):.2f}"))
+        telemetry_put = str(gex_data.get("put_distance_telemetry", f"Put: +${abs(spot_xau - put_wall):.2f}"))
+        is_corridor_valid = bool(gex_data.get("is_corridor_valid", put_wall < spot_xau < call_wall))
+
+        # Try centralized broadcaster first, fallback to direct local method
+        sent = False
+        if broadcast_market_pulse is not None:
+            try:
+                sent = broadcast_market_pulse(
+                    spot=spot_xau,
+                    call_wall=call_wall,
+                    put_wall=put_wall,
+                    gamma_flip=gamma_flip,
+                    regime=regime,
+                    us10y_yield=latest_val,
+                    us10y_impact=gold_macro_impact,
+                    net_dex=net_dex,
+                    blast_active=blast_active,
+                    telemetry_call=telemetry_call,
+                    telemetry_put=telemetry_put,
+                    is_corridor_valid=is_corridor_valid
+                )
+            except Exception as e:
+                print(f"[CENTRALIZED PULSE ERROR] {e}. Falling back to direct sender.")
+                sent = False
+
+        if not sent:
+            send_direct_telegram_pulse(
+                spot=spot_xau,
+                call_wall=call_wall,
+                put_wall=put_wall,
+                gamma_flip=gamma_flip,
+                regime=regime,
+                us10y_yield=latest_val,
+                us10y_impact=gold_macro_impact,
+                net_dex=net_dex,
+                blast_active=blast_active,
+                telemetry_call=telemetry_call,
+                telemetry_put=telemetry_put,
+                is_corridor_valid=is_corridor_valid
+            )
     else:
         print("[PULSE SKIPPED] GEX calculation payload degraded or missing.")
 
 if __name__ == "__main__":
     run_sync()
-
+    
