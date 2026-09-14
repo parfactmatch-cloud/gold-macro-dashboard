@@ -246,7 +246,7 @@ def broadcast_execution_card(side: str, spot: float, sl: float, tp: float, regim
     rr = round(reward / risk, 2) if risk > 0 else 0.0
     now_utc = datetime.now(timezone.utc).strftime("%H:%M:%S UTC")
 
-    is_blast = "GAMMA_BLAST" in regime_tag
+    is_blast = "GAMMA_BLAST" in regime_tag or "GAMMA_COLLAPSE" in regime_tag
     icon = "🚀🟢 <b>INSTITUTIONAL GAMMA BLAST (LONG)</b>" if (is_blast and side == "BUY") else (
            "🚀🔴 <b>INSTITUTIONAL GAMMA COLLAPSE (SHORT)</b>" if is_blast else (
            "⚡🟢 <b>QUANT ALPHA LONG EXECUTION</b>" if side == "BUY" else "⚡🔴 <b>QUANT ALPHA SHORT EXECUTION</b>"))
@@ -282,6 +282,58 @@ def broadcast_gatekeeper_rejection(reason: str, strategy: str, offered_rr: float
     )
     return dispatch_telegram(msg)
 
+def broadcast_market_pulse(
+    spot: float,
+    call_wall: float,
+    put_wall: float,
+    gamma_flip: float,
+    regime: str,
+    us10y_yield: float,
+    us10y_impact: str,
+    net_dex: float = 0.0,
+    blast_active: bool = False,
+    telemetry_call: str = "Call: N/A",
+    telemetry_put: str = "Put: N/A",
+    is_corridor_valid: bool = True
+) -> bool:
+    """
+    Broadcasts institutional telemetry pulse with non-glitching distance strings.
+    """
+    now_utc = datetime.now(timezone.utc).strftime("%H:%M UTC | %d %b %Y")
+
+    if blast_active:
+        barrier_status = "🚀 <b>GAMMA BLAST REGIME</b>: High directional flow detected. Dealer walls bypassed."
+    elif not is_corridor_valid:
+        if spot <= put_wall:
+            barrier_status = f"🔴 <b>PUT WALL BREACHED</b>: Spot below floor [Depth: {telemetry_put}]"
+        else:
+            barrier_status = f"🚀 <b>CALL WALL SQUEEZE</b>: Spot above ceiling [Exceed: {telemetry_call}]"
+    else:
+        barrier_status = f"🟢 <b>CORRIDOR CLEAR</b>: Spot inside boundaries ({telemetry_call} | {telemetry_put})"
+
+    regime_tag = "🟩 LONG GAMMA (Mean-Reverting)" if "LONG_GAMMA" in regime else "🟥 SHORT GAMMA (Volatility Expansion)"
+    macro_icon = "🟢" if us10y_impact == "BULLISH_TAILWIND" else ("🔴" if us10y_impact == "BEARISH_PRESSURE" else "⚪")
+    dex_bias = "🟢 Dealer Net Long" if net_dex > 0 else ("🔴 Dealer Net Short" if net_dex < 0 else "⚪ Neutral")
+
+    pulse_card = (
+        f"📡 <b>INSTITUTIONAL MARKET RADAR PULSE</b>\n"
+        f"━━━━━━━━━━━━━━━━━━━━━━━\n"
+        f"💵 <b>Live Spot/Futures</b>: <code>${spot:.2f}</code>\n"
+        f"🏛 <b>US10Y Yield</b>: <code>{us10y_yield:.2f}%</code> {macro_icon} <code>{us10y_impact}</code>\n"
+        f"⚡ <b>Dealer Regime</b>: {regime_tag}\n"
+        f"⚖️ <b>Net Delta (DEX)</b>: <code>{net_dex:+.1f}M</code> ({dex_bias})\n"
+        f"━━━━━━━━━━━━━━━━━━━━━━━\n"
+        f"🧱 <b>Gamma Corridors</b>:\n"
+        f"• <b>Call Wall (Ceiling)</b>: <code>${call_wall:.2f}</code>\n"
+        f"• <b>Put Wall (Floor)</b>: <code>${put_wall:.2f}</code>\n"
+        f"• <b>Gamma Neutral Flip</b>: <code>${gamma_flip:.2f}</code>\n"
+        f"━━━━━━━━━━━━━━━━━━━━━━━\n"
+        f"🛡️ <b>Corridor Telemetry</b>:\n"
+        f"{barrier_status}\n"
+        f"⏰ <b>Synced</b>: <code>{now_utc}</code>"
+    )
+    return dispatch_telegram(pulse_card)
+
 # ================= 9. QUANTITATIVE ARBITRATION PIPELINE =================
 def execute_systematic_pipeline():
     print(f"[SIGNAL ARBITRATION] Initializing Pipeline Run at UTC {datetime.now(timezone.utc).strftime('%H:%M:%S')}...")
@@ -297,10 +349,10 @@ def execute_systematic_pipeline():
     print(f"[SPOT RESOLUTION] Active Spot Price: ${spot:.2f} (ATR-1H: ${atr_1h:.2f})")
 
     confluence_active, conf_type, matrix = compute_mtf_fractals(spot)
-    weekday = datetime.now(timezone.utc).weekday() # 0 = Monday, 6 = Sunday
+    weekday = datetime.now(timezone.utc).weekday()
     is_weekend = weekday >= 5
 
-    # 1. Pull Institutional Options GEX & DEX Boundaries
+    # 1. Pull Institutional Options GEX & DEX Boundaries (Integrated with Patch)
     gex_data = GoldGEXEngine.read_cached_levels()
     call_wall = float(gex_data.get("call_wall_xau", 4588.34))
     put_wall = float(gex_data.get("put_wall_xau", 4422.50))
@@ -308,7 +360,12 @@ def execute_systematic_pipeline():
     gamma_blast_allowed = bool(gex_data.get("gamma_blast_active", False))
     gex_cushion = max(0.5 * atr_1h, 3.0)
 
+    telemetry_call = gex_data.get("call_distance_telemetry", f"Call: +${abs(call_wall - spot):.2f}")
+    telemetry_put = gex_data.get("put_distance_telemetry", f"Put: +${abs(spot - put_wall):.2f}")
+    is_corridor_valid = bool(gex_data.get("is_corridor_valid", put_wall < spot < call_wall))
+
     print(f"[GEX STATUS] Call Wall: ${call_wall:.2f} | Put Wall: ${put_wall:.2f} | Net DEX: {net_dex:+.1f}M | Squeeze Blast: {gamma_blast_allowed}")
+    print(f"[TELEMETRY RESOLUTION] {telemetry_call} | {telemetry_put} | Valid Corridor: {is_corridor_valid}")
 
     if is_weekend:
         print("[PIPELINE STATUS] Market is currently CLOSED for the weekend. Active trade signals are systematically paused.")
@@ -371,9 +428,9 @@ def execute_systematic_pipeline():
         else:
             log_entry.to_csv(TRADE_LOG_FILE, mode='a', header=False, index=False)
     else:
-        print(f"[PIPELINE EQUILIBRIUM] No trade qualified. State: Neutral / Corridor Range.")
+        print("[PIPELINE EQUILIBRIUM] No trade qualified. State: Neutral / Corridor Range.")
 
 # ================= 10. MAIN RUNNER ENTRYPOINT =================
 if __name__ == "__main__":
     execute_systematic_pipeline()
-    
+                        
