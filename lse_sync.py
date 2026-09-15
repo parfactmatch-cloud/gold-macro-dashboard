@@ -2,8 +2,8 @@
 LSE Isolated Macro & Options GEX/DEX Sync Engine
 - Fetches US10Y Bond Yields from London Strategic Edge API -> saves to 'lse_macro.csv'
 - Computes SPDR Gold Shares (GLD) dealer Gamma Walls, Net DEX & Blast Squeeze -> saves to 'gex_levels.json'
-- Multi-Source Spot Feed: CME Futures (GC=F) -> Stooq XAUUSD -> Binance PAXGUSDT -> GLD NAV
-- Regime-agnostic: Directly supports CME GC1! $4,400+ pricing without static baseline truncations
+- Multi-Source Spot Feed: Spot XAUUSD (Stooq/Binance) -> CME Futures (GC=F) -> GLD Basket
+- Aligned with Spot CFD Execution & Dynamic Basis Normalization
 - Periodic Radar Telemetry: Bulletproof HTML Telegram dispatch with clean mathematical distance telemetry
 """
 
@@ -49,17 +49,16 @@ def send_direct_telegram_pulse(
     is_corridor_valid: bool = True
 ):
     """Direct, robust HTML Telegram dispatcher that prevents double-negative glitches & entity parse errors."""
-    print(f"[TG AUTH CHECK] Token configured: {bool(TELEGRAM_BOT_TOKEN)} | Chat ID configured: {bool(TELEGRAM_CHAT_ID)}")
     if not TELEGRAM_BOT_TOKEN or not TELEGRAM_CHAT_ID:
         print("[TG CRITICAL] TELEGRAM_BOT_TOKEN or TELEGRAM_CHAT_ID is missing from environment variables!")
         return
 
     now_utc = datetime.now(timezone.utc).strftime("%H:%M UTC | %d %b %Y")
 
-    # Corridor and Barrier Status Calculation using Patched Absolute Boundaries
-    if blast_active:
+    # Fixed: Only announce bypass if blast is active AND boundaries are physically breached
+    if blast_active and (spot >= call_wall or spot <= put_wall):
         barrier_status = "🚀 <b>GAMMA BLAST REGIME</b>: High directional flow detected. Dealer walls in squeeze bypass mode."
-    elif not is_corridor_valid or spot < put_wall or spot > call_wall:
+    elif not is_corridor_valid or spot <= put_wall or spot >= call_wall:
         if spot <= put_wall:
             barrier_status = f"🔴 <b>PUT WALL BREACHED</b>: Spot trading below floor (${put_wall:.2f}) [Depth: {telemetry_put}]"
         else:
@@ -69,12 +68,12 @@ def send_direct_telegram_pulse(
 
     regime_tag = "🟩 LONG GAMMA (Mean-Reverting)" if "LONG_GAMMA" in regime else "🟥 SHORT GAMMA (Volatility Expansion)"
     macro_icon = "🟢" if us10y_impact == "BULLISH_TAILWIND" else ("🔴" if us10y_impact == "BEARISH_PRESSURE" else "⚪")
-    dex_bias = "Dealer Net Long" if net_dex > 0 else ("Dealer Net Short" if net_dex < 0 else "Neutral")
+    dex_bias = "🟢 Dealer Net Long" if net_dex > 0 else ("🔴 Dealer Net Short" if net_dex < 0 else "⚪ Neutral")
 
     html_card = (
         f"📡 <b>INSTITUTIONAL MARKET RADAR PULSE</b>\n"
         f"━━━━━━━━━━━━━━━━━━━━━━━\n"
-        f"💵 <b>Live Spot/Futures</b>: <code>${spot:.2f}</code>\n"
+        f"💵 <b>Live Spot (CFD Parity)</b>: <code>${spot:.2f}</code>\n"
         f"🏛 <b>US10Y Yield</b>: <code>{us10y_yield:.2f}%</code> {macro_icon} <code>{us10y_impact}</code>\n"
         f"⚡ <b>Dealer Regime</b>: {regime_tag}\n"
         f"⚖️ <b>Net Delta (DEX)</b>: <code>{net_dex:+.1f}M</code> ({dex_bias})\n"
@@ -91,7 +90,6 @@ def send_direct_telegram_pulse(
 
     url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
 
-    # Primary attempt: Safe HTML Parse Mode
     try:
         res = requests.post(url, json={"chat_id": TELEGRAM_CHAT_ID, "text": html_card, "parse_mode": "HTML"}, timeout=10)
         if res.status_code == 200:
@@ -102,7 +100,6 @@ def send_direct_telegram_pulse(
     except Exception as e:
         print(f"[PULSE NETWORK EXCEPTION] {e}")
 
-    # Fallback attempt: Clean Plain Text
     try:
         clean_status = barrier_status.replace('<b>', '').replace('</b>', '')
         raw_text = (
@@ -148,10 +145,41 @@ def fetch_lse_series(symbol="US10Y", limit=10):
 
 def fetch_live_gold_spot() -> float:
     """
-    Regime-agnostic Spot & Futures Gold resolution.
-    Directly aligns with CME GC1! ($4,400+ regime) and Spot XAU/USD.
+    Spot Gold resolution prioritized for Spot/CFD execution parity (XAUUSD).
+    Futures are kept as secondary fallback to avoid unadjusted Basis Spreads.
     """
-    # 1. Primary: CME Continuous Gold Futures (GC=F) with Session & 7-day Buffer
+    # 1. Primary: Stooq Spot Gold (Pure Spot XAUUSD)
+    try:
+        stooq_url = "https://stooq.com/q/l/?s=xauusd&f=sd2t2ohlcv&h&e=csv"
+        res = requests.get(stooq_url, headers={"User-Agent": "Mozilla/5.0"}, timeout=5)
+        if res.status_code == 200:
+            lines = res.text.strip().split("\n")
+            if len(lines) >= 2:
+                cols = lines[1].split(",")
+                close_val = float(cols[6])
+                if close_val > 1500.0:
+                    print(f"[SPOT SUCCESS] Sourced via Stooq Spot XAUUSD: ${close_val:.2f}")
+                    return close_val
+    except Exception as e:
+        print(f"[SPOT STOOQ SKIP] {e}")
+
+    # 2. Secondary: Binance PAXGUSDT (Continuous Real-time Tape)
+    endpoints = [
+        "https://api.binance.com/api/v3/ticker/price?symbol=PAXGUSDT",
+        "https://data-api.binance.vision/api/v3/ticker/price?symbol=PAXGUSDT"
+    ]
+    for url in endpoints:
+        try:
+            res = requests.get(url, timeout=4)
+            if res.status_code == 200:
+                price = float(res.json().get("price", 0.0))
+                if price > 1500.0:
+                    print(f"[SPOT SUCCESS] Sourced via Binance PAXG (Spot Parity): ${price:.2f}")
+                    return price
+        except Exception:
+            continue
+
+    # 3. Tertiary Fallback: CME Futures (GC=F) - Basis Gap may exist
     try:
         import yfinance as yf
         session = requests.Session()
@@ -163,43 +191,12 @@ def fetch_live_gold_spot() -> float:
         if not hist.empty:
             price = float(hist["Close"].dropna().iloc[-1])
             if price > 1500.0:
-                print(f"[SPOT SUCCESS] Sourced via CME Futures (GC=F): ${price:.2f}")
+                print(f"[SPOT FALLBACK] Sourced via CME Futures (GC=F): ${price:.2f}")
                 return price
     except Exception as e:
         print(f"[SPOT CME SKIP] {e}")
 
-    # 2. Secondary: Stooq Institutional Spot Gold (XAUUSD)
-    try:
-        stooq_url = "https://stooq.com/q/l/?s=xauusd&f=sd2t2ohlcv&h&e=csv"
-        res = requests.get(stooq_url, headers={"User-Agent": "Mozilla/5.0"}, timeout=5)
-        if res.status_code == 200:
-            lines = res.text.strip().split("\n")
-            if len(lines) >= 2:
-                cols = lines[1].split(",")
-                close_val = float(cols[6])
-                if close_val > 1500.0:
-                    print(f"[SPOT SUCCESS] Sourced via Stooq XAUUSD: ${close_val:.2f}")
-                    return close_val
-    except Exception as e:
-        print(f"[SPOT STOOQ SKIP] {e}")
-
-    # 3. Tertiary: Binance PAXGUSDT (24/7 continuous order tape)
-    endpoints = [
-        "https://api.binance.com/api/v3/ticker/price?symbol=PAXGUSDT",
-        "https://data-api.binance.vision/api/v3/ticker/price?symbol=PAXGUSDT"
-    ]
-    for url in endpoints:
-        try:
-            res = requests.get(url, timeout=4)
-            if res.status_code == 200:
-                price = float(res.json().get("price", 0.0))
-                if price > 1500.0:
-                    print(f"[SPOT SUCCESS] Sourced via Binance PAXG: ${price:.2f}")
-                    return price
-        except Exception:
-            continue
-
-    # 4. Fallback: SPDR Gold Shares (GLD) Dynamic Basket Translation
+    # 4. Final Fallback: SPDR Gold Shares (GLD) Translation
     try:
         import yfinance as yf
         gld_hist = yf.Ticker("GLD").history(period="7d")
@@ -236,7 +233,7 @@ def sync_gex(spot_price: float):
 def run_sync():
     print(f"[LSE SYNC RUN] UTC: {datetime.now(timezone.utc).strftime('%H:%M:%S')}")
     
-    # 1. Fetch US10Y Bond Yield (Macro Directional Filter)
+    # 1. Fetch US10Y Bond Yield
     latest_val = 0.0
     gold_macro_impact = "NEUTRAL"
     df_us10y = fetch_lse_series("US10Y", limit=5)
@@ -246,7 +243,6 @@ def run_sync():
         prev_val = float(df_us10y["value"].iloc[1]) if len(df_us10y) > 1 else latest_val
         delta_yield = round(latest_val - prev_val, 4)
 
-        # Yield rising = Bearish for Gold; Yield falling = Bullish for Gold
         gold_macro_impact = "BEARISH_PRESSURE" if delta_yield > 0.02 else ("BULLISH_TAILWIND" if delta_yield < -0.02 else "NEUTRAL")
 
         record = pd.DataFrame([{
@@ -261,7 +257,7 @@ def run_sync():
     else:
         print("[LSE SYNC WARN] Macro yield series skipped or failed. Retaining prior lse_macro.csv state.")
 
-    # 2. Options Gamma & Delta Exposure (GEX/DEX) Calculation
+    # 2. Options Gamma & Delta Exposure (GEX/DEX) Calculation using Spot Parity
     spot_xau = fetch_live_gold_spot()
     gex_data = sync_gex(spot_price=spot_xau)
 
@@ -275,12 +271,10 @@ def run_sync():
         net_dex = float(gex_data.get("net_dex_m", 0.0))
         blast_active = bool(gex_data.get("gamma_blast_active", False))
         
-        # Pull clean pre-computed telemetry strings from patch
         telemetry_call = str(gex_data.get("call_distance_telemetry", f"Call: +${abs(call_wall - spot_xau):.2f}"))
         telemetry_put = str(gex_data.get("put_distance_telemetry", f"Put: +${abs(spot_xau - put_wall):.2f}"))
         is_corridor_valid = bool(gex_data.get("is_corridor_valid", put_wall < spot_xau < call_wall))
 
-        # Try centralized broadcaster first, fallback to direct local method
         sent = False
         if broadcast_market_pulse is not None:
             try:
@@ -322,4 +316,4 @@ def run_sync():
 
 if __name__ == "__main__":
     run_sync()
-    
+                              
