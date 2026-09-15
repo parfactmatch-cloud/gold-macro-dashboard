@@ -2,7 +2,7 @@
 ===============================================================================
 SYSTEM: INSTITUTIONAL SYSTEMATIC MACRO & QUANT CONFLUENCE ENGINE (XAU/USD)
 METHODOLOGY: LSE YIELD VECTORS, DEALER GEX/DEX & GAMMA BLAST EXEMPTION GATE
-ROLE: PRODUCTION TELEMETRY & QUANT EXECUTION ENGINE
+ROLE: PRODUCTION TELEMETRY & QUANT EXECUTION ENGINE (PATCHED & ALIGNED)
 ===============================================================================
 """
 
@@ -79,6 +79,19 @@ def fetch_twelve_data(interval: str = "1h", outputsize: int = 30) -> Optional[pd
 
 # ================= 3. REAL-TIME SPOT PRICE & ORDER BOOK =================
 def get_live_gold_spot() -> Optional[float]:
+    """
+    Fetches spot gold reference. Prioritizes TwelveData XAU/USD if available,
+    with fallback to Paxos Gold on Binance.
+    """
+    if TWELVE_DATA_API_KEY:
+        try:
+            url = f"https://api.twelvedata.com/price?symbol=XAU/USD&apikey={TWELVE_DATA_API_KEY}"
+            res = requests.get(url, timeout=4).json()
+            if "price" in res:
+                return float(res["price"])
+        except Exception:
+            pass
+
     endpoints = [
         "https://api.binance.com/api/v3/ticker/price?symbol=PAXGUSDT",
         "https://data-api.binance.vision/api/v3/ticker/price?symbol=PAXGUSDT"
@@ -206,8 +219,8 @@ def compute_risk_envelope() -> Tuple[float, float, float, float, float, float]:
     df_1h = fetch_twelve_data("1h", 35)
     df_1d = fetch_twelve_data("1d", 30)
 
-    fallback_price = 4400.0
-    ema_50_1h = 4400.0
+    fallback_price = 4300.0
+    ema_50_1h = 4300.0
     atr_val = 8.50
 
     if df_1h is not None and len(df_1h) >= 15:
@@ -217,8 +230,8 @@ def compute_risk_envelope() -> Tuple[float, float, float, float, float, float]:
         rolling_atr = (df_1h['high'] - df_1h['low']).rolling(VOLATILITY_LOOKBACK).mean().iloc[-1]
         atr_val = float(rolling_atr) if not np.isnan(rolling_atr) and rolling_atr > 0 else 8.50
 
-    ema_20_1d = 4380.0
-    pdh, pdl = 4450.0, 4350.0
+    ema_20_1d = 4300.0
+    pdh, pdl = 4350.0, 4250.0
     if df_1d is not None and len(df_1d) >= 20:
         c_1d = df_1d['close']
         ema_20_1d = float(c_1d.ewm(span=20, adjust=False).mean().iloc[-1])
@@ -297,11 +310,12 @@ def broadcast_market_pulse(
     is_corridor_valid: bool = True
 ) -> bool:
     """
-    Broadcasts institutional telemetry pulse with non-glitching distance strings.
+    Broadcasts institutional telemetry pulse without false-blast flags.
     """
     now_utc = datetime.now(timezone.utc).strftime("%H:%M UTC | %d %b %Y")
 
-    if blast_active:
+    # Only announce bypass if blast is structurally verified or price actually broke boundary
+    if blast_active and (spot >= call_wall or spot <= put_wall):
         barrier_status = "🚀 <b>GAMMA BLAST REGIME</b>: High directional flow detected. Dealer walls bypassed."
     elif not is_corridor_valid:
         if spot <= put_wall:
@@ -352,23 +366,28 @@ def execute_systematic_pipeline():
     weekday = datetime.now(timezone.utc).weekday()
     is_weekend = weekday >= 5
 
-    # 1. Pull Institutional Options GEX & DEX Boundaries (Integrated with Patch)
+    # 1. Pull Institutional Options GEX & DEX Boundaries
     gex_data = GoldGEXEngine.read_cached_levels()
-    call_wall = float(gex_data.get("call_wall_xau", 4588.34))
-    put_wall = float(gex_data.get("put_wall_xau", 4422.50))
+    call_wall = float(gex_data.get("call_wall_xau", spot + 50.0))
+    put_wall = float(gex_data.get("put_wall_xau", spot - 50.0))
     net_dex = float(gex_data.get("net_dex_m", 0.0))
     gamma_blast_allowed = bool(gex_data.get("gamma_blast_active", False))
     gex_cushion = max(0.5 * atr_1h, 3.0)
 
-    telemetry_call = gex_data.get("call_distance_telemetry", f"Call: +${abs(call_wall - spot):.2f}")
-    telemetry_put = gex_data.get("put_distance_telemetry", f"Put: +${abs(spot - put_wall):.2f}")
-    is_corridor_valid = bool(gex_data.get("is_corridor_valid", put_wall < spot < call_wall))
+    # Basis Normalization (Handles Futures/Spot Spread)
+    cached_gex_spot = float(gex_data.get("spot_xau", spot))
+    basis_gap = cached_gex_spot - spot if abs(cached_gex_spot - spot) > 10.0 else 0.0
+    norm_call_wall = round(call_wall - basis_gap, 2)
+    norm_put_wall = round(put_wall - basis_gap, 2)
 
-    print(f"[GEX STATUS] Call Wall: ${call_wall:.2f} | Put Wall: ${put_wall:.2f} | Net DEX: {net_dex:+.1f}M | Squeeze Blast: {gamma_blast_allowed}")
-    print(f"[TELEMETRY RESOLUTION] {telemetry_call} | {telemetry_put} | Valid Corridor: {is_corridor_valid}")
+    telemetry_call = gex_data.get("call_distance_telemetry", f"Call: +${abs(norm_call_wall - spot):.2f}")
+    telemetry_put = gex_data.get("put_distance_telemetry", f"Put: +${abs(spot - norm_put_wall):.2f}")
+    is_corridor_valid = norm_put_wall < spot < norm_call_wall
+
+    print(f"[GEX STATUS] Call: ${norm_call_wall:.2f} | Put: ${norm_put_wall:.2f} | DEX: {net_dex:+.1f}M | Basis Adj: -${basis_gap:.2f}")
 
     if is_weekend:
-        print("[PIPELINE STATUS] Market is currently CLOSED for the weekend. Active trade signals are systematically paused.")
+        print("[PIPELINE STATUS] Market is CLOSED for the weekend.")
         return
 
     signal = "NEUTRAL"
@@ -382,10 +401,12 @@ def execute_systematic_pipeline():
         target_sl = round(spot - (risk_unit + spread_buffer), 2)
         target_tp = round(max(pdh, spot + (risk_unit * 2.0) + spread_buffer), 2)
         offered_rr = (target_tp - spot) / (spot - target_sl) if (spot - target_sl) > 0 else 0.0
-        near_call_wall = 0 <= (call_wall - spot) <= gex_cushion
+        near_call_wall = 0 <= (norm_call_wall - spot) <= gex_cushion
 
-        if near_call_wall and not gamma_blast_allowed:
-            broadcast_gatekeeper_rejection("Approaching Call Wall Ceiling without Blast Squeeze", "QUANT_LONG", offered_rr, f"${call_wall:.2f}")
+        if net_dex < -400.0 and not gamma_blast_allowed:
+            broadcast_gatekeeper_rejection(f"Extreme Negative DEX ({net_dex:+.1f}M) Opposing Longs", "QUANT_LONG", offered_rr, f"${norm_call_wall:.2f}")
+        elif near_call_wall and not gamma_blast_allowed:
+            broadcast_gatekeeper_rejection("Approaching Call Wall Ceiling without Blast Squeeze", "QUANT_LONG", offered_rr, f"${norm_call_wall:.2f}")
         elif offered_rr < MIN_RR_THRESHOLD:
             broadcast_gatekeeper_rejection("Sub-optimal Risk:Reward Profile", "QUANT_LONG", offered_rr, "NONE")
         else:
@@ -398,10 +419,13 @@ def execute_systematic_pipeline():
         target_sl = round(spot + (risk_unit + spread_buffer), 2)
         target_tp = round(min(pdl, spot - (risk_unit * 2.0) - spread_buffer), 2)
         offered_rr = (spot - target_tp) / (target_sl - spot) if (target_sl - spot) > 0 else 0.0
-        near_put_wall = 0 <= (spot - put_wall) <= gex_cushion
+        near_put_wall = 0 <= (spot - norm_put_wall) <= gex_cushion
 
-        if near_put_wall and not gamma_blast_allowed:
-            broadcast_gatekeeper_rejection("Approaching Put Wall Floor without Gamma Collapse", "QUANT_SHORT", offered_rr, f"${put_wall:.2f}")
+        # NEW INSTITUTIONAL DEX CHECK: Block short when dealers are net long (+DEX)
+        if net_dex > 20.0:
+            broadcast_gatekeeper_rejection(f"Positive DEX ({net_dex:+.1f}M) Absorbing Downside Flow", "QUANT_SHORT", offered_rr, f"${norm_put_wall:.2f}")
+        elif near_put_wall and not gamma_blast_allowed:
+            broadcast_gatekeeper_rejection("Approaching Put Wall Floor without Gamma Collapse", "QUANT_SHORT", offered_rr, f"${norm_put_wall:.2f}")
         elif offered_rr < MIN_RR_THRESHOLD:
             broadcast_gatekeeper_rejection("Sub-optimal Risk:Reward Profile", "QUANT_SHORT", offered_rr, "NONE")
         else:
@@ -412,7 +436,7 @@ def execute_systematic_pipeline():
     # --- DISPATCH SIGNAL IF QUALIFIED ---
     if signal in ["BUY", "SELL"] and sl and tp:
         print(f"[ACTION TRIGGERED] Firing {signal} signal into Telegram...")
-        broadcast_execution_card(signal, spot, sl, tp, conviction, str(call_wall), str(put_wall), f"{net_dex:+.1f}M")
+        broadcast_execution_card(signal, spot, sl, tp, conviction, str(norm_call_wall), str(norm_put_wall), f"{net_dex:+.1f}M")
         
         # Append into trade_log.csv
         log_entry = pd.DataFrame([{
@@ -428,9 +452,4 @@ def execute_systematic_pipeline():
         else:
             log_entry.to_csv(TRADE_LOG_FILE, mode='a', header=False, index=False)
     else:
-        print("[PIPELINE EQUILIBRIUM] No trade qualified. State: Neutral / Corridor Range.")
-
-# ================= 10. MAIN RUNNER ENTRYPOINT =================
-if __name__ == "__main__":
-    execute_systematic_pipeline()
-                        
+     
