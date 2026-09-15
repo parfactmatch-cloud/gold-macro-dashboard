@@ -1,2 +1,2 @@
-timestamp,us10y_yield,yield_delta,gold_macro_impact
-2026-09-15 17:36:17,4.9190000000000005,0.07,BEARISH_PRESSURE
+timestamp,us10y_yield,yield_delta,gold_macro_impact,cot_bias,news_shield_active,news_sentiment
+2026-09-15 20:23:16,0.0,0.0,NEUTRAL,NEUTRAL,False,NEUTRAL
