@@ -2,6 +2,7 @@
 ===============================================================================
 PROJECT: LSE ULTRA-LOW LATENCY REAL-TIME SCALPING ENGINE (XAU/USD)
 ARCHITECTURE: Zero Disk-I/O Latency | Non-Blocking Async Alerts | 100% Dynamic Quant
+ENGINE: Powered by London Strategic Edge Official Python SDK
 ===============================================================================
 """
 
@@ -16,16 +17,35 @@ from lse import LSE
 
 # ================= CONFIGURATION =================
 LSE_API_KEY = os.getenv("LSE_API_KEY", "").strip()
-TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN", "").strip()
-TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID", "").strip()
+TELEGRAM_BOT_TOKEN = (
+    os.getenv("TELEGRAM_BOT_TOKEN", "") 
+    or os.getenv("BOT_TOKEN", "")
+).strip()
+TELEGRAM_CHAT_ID = (
+    os.getenv("TELEGRAM_CHAT_ID", "") 
+    or os.getenv("CHAT_ID", "")
+).strip()
 
 SCALP_LOG_FILE = "scalp_log.csv"
+LSE_MACRO_FILE = "lse_macro.csv"
 CANDLE_INTERVAL_SEC = 300  # 5 Minutes
 
 # Global State
 candle_history = []
 current_candle = None
 has_open_trade = False  # In-memory Concurrency Lock
+
+# ================= DYNAMIC MACRO SYNC =================
+def get_live_macro_impact() -> str:
+    """Reads the latest macro impact state updated by lse_sync.py."""
+    if os.path.exists(LSE_MACRO_FILE):
+        try:
+            df = pd.read_csv(LSE_MACRO_FILE)
+            if not df.empty and "gold_macro_impact" in df.columns:
+                return str(df["gold_macro_impact"].iloc[-1]).strip()
+        except Exception:
+            pass
+    return "NEUTRAL"
 
 # ================= NON-BLOCKING TELEGRAM =================
 def async_telegram(text: str):
@@ -35,7 +55,7 @@ def async_telegram(text: str):
             try:
                 requests.post(
                     f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage",
-                    json={"chat_id": TELEGRAM_CHAT_ID, "text": text, "parse_mode": "Markdown"},
+                    json={"chat_id": TELEGRAM_CHAT_ID, "text": text, "parse_mode": "HTML"},
                     timeout=5
                 )
             except Exception as e:
@@ -44,25 +64,28 @@ def async_telegram(text: str):
 
 # ================= COLD-START HISTORY SEEDER =================
 def bootstrap_history(client):
-    """Pre-populates 5M history via REST so the engine evaluates immediately on first tick."""
+    """Pre-populates 5M history via official REST API so the engine evaluates immediately."""
     global candle_history
-    print("[SYSTEM] Fetching 35 historical 5M bars for instant warm start...")
+    print("[SYSTEM] Fetching historical 5M bars via LSE REST SDK...")
     try:
-        bars = client.get_bars("XAU/USD", timeframe="5m", limit=35)
-        for b in bars:
-            candle_history.append({
-                "time": int(b.timestamp),
-                "open": float(b.open),
-                "high": float(b.high),
-                "low": float(b.low),
-                "close": float(b.close)
-            })
-        print(f"[SYSTEM] Warm start complete: {len(candle_history)} bars buffered.")
+        # Official SDK syntax: client.candles(symbol, timeframe, limit=...)
+        bars = client.candles("XAU/USD", timeframe="5m", limit=35, order="asc")
+        if isinstance(bars, list) and len(bars) > 0:
+            for b in bars:
+                candle_history.append({
+                    "open": float(b.get("open", 0.0)),
+                    "high": float(b.get("high", 0.0)),
+                    "low": float(b.get("low", 0.0)),
+                    "close": float(b.get("close", 0.0))
+                })
+            print(f"[SYSTEM] Warm start complete: {len(candle_history)} bars buffered.")
+        else:
+            print("[WARN] Received empty bars. Falling back to live accumulation.")
     except Exception as e:
-        print(f"[WARN] Failed to preload history ({e}). Will buffer live ticks.")
+        print(f"[WARN] Failed to preload history ({e}). Accumulating live ticks.")
 
 # ================= DYNAMIC QUANT KERNEL =================
-def evaluate_dynamic_scalp(df_5m: pd.DataFrame, spot_price: float, macro_vector: str = "BEARISH_PRESSURE"):
+def evaluate_dynamic_scalp(df_5m: pd.DataFrame, spot_price: float, macro_vector: str = "NEUTRAL"):
     global has_open_trade
     if has_open_trade or len(df_5m) < 25:
         return
@@ -104,15 +127,13 @@ def evaluate_dynamic_scalp(df_5m: pd.DataFrame, spot_price: float, macro_vector:
     rolling_high = float(df_5m["high"].iloc[-11:-1].max())
 
     # ------------------ STRATEGY 1: EXHAUSTION SPIKE FADE (SHORT) ------------------
-    # Trigger: Price overextended (>1.5x ATR) + Rejection Upper Wick + Bearish Macro Pressure
     if deviation > 1.50 and upper_wick > (body * 1.1) and macro_vector == "BEARISH_PRESSURE":
         sl = round(curr_h + (atr * 0.20), 2)
-        tp = round(curr_ema_slow, 2)  # Return to Mean Target
+        tp = round(curr_ema_slow, 2)
         execute_trade("SHORT", spot_price, sl, tp, "VOLATILITY_EXHAUSTION_FADE", atr)
         return
 
     # ------------------ STRATEGY 2: LIQUIDITY SWEEP SNIPER (BUY) ------------------
-    # Trigger: False breakdown of rolling base + Absorbed wick + Macro is not hostile
     is_sweep_absorbed = (curr_l < rolling_low) and (spot_price > rolling_low) and (lower_wick > body * 1.2)
     if is_sweep_absorbed and macro_vector != "BEARISH_PRESSURE":
         sl = round(curr_l - (atr * 0.20), 2)
@@ -122,7 +143,6 @@ def evaluate_dynamic_scalp(df_5m: pd.DataFrame, spot_price: float, macro_vector:
         return
 
     # ------------------ STRATEGY 3: STRUCTURAL PULLBACK BUY ------------------
-    # Anti-FOMO Guard: Must be close to equilibrium (|deviation| <= 0.8)
     if abs(deviation) <= 0.80 and velocity > 0.04 and spot_price > curr_ema_slow:
         if curr_l <= (curr_ema_fast + 0.35) and spot_price > curr_ema_fast and spot_price >= curr_o:
             if macro_vector != "BEARISH_PRESSURE":
@@ -134,30 +154,29 @@ def evaluate_dynamic_scalp(df_5m: pd.DataFrame, spot_price: float, macro_vector:
 # ================= EXECUTION & PERSISTENCE =================
 def execute_trade(side: str, spot: float, sl: float, tp: float, setup_type: str, atr: float):
     global has_open_trade
-    has_open_trade = True  # Instant memory lock
+    has_open_trade = True
 
     risk = abs(spot - sl)
     reward = abs(tp - spot)
     rr = round(reward / risk, 2) if risk > 0 else 0
     utc_str = datetime.now(timezone.utc).strftime("%H:%M:%S UTC")
 
-    icon = "⚡🟢 *DYNAMIC BUY TRIGGER*" if side == "BUY" else "⚡🔴 *DYNAMIC FADE SHORT*"
+    icon = "⚡🟢 <b>DYNAMIC BUY TRIGGER</b>" if side == "BUY" else "⚡🔴 <b>DYNAMIC FADE SHORT</b>"
     card = (
         f"{icon}\n"
         f"━━━━━━━━━━━━━━━━━━━━━━━\n"
-        f"🎯 *Engine Setup*: `{setup_type}`\n"
-        f"💵 *Execution Spot*: `${spot:.2f}`\n"
-        f"📐 *5M Volatility (ATR)*: `${atr:.2f}`\n"
-        f"⚖️ *Risk Envelope*: `Risk: ${risk:.2f} | R:R: 1:{rr}`\n"
+        f"🎯 <b>Engine Setup</b>: <code>{setup_type}</code>\n"
+        f"💵 <b>Execution Spot</b>: <code>${spot:.2f}</code>\n"
+        f"📐 <b>5M Volatility (ATR)</b>: <code>${atr:.2f}</code>\n"
+        f"⚖️ <b>Risk Envelope</b>: <code>Risk: ${risk:.2f} | R:R: 1:{rr}</code>\n"
         f"━━━━━━━━━━━━━━━━━━━━━━━\n"
-        f"🛑 *Dynamic SL*: `${sl:.2f}`\n"
-        f"🎯 *Quant Target*: `${tp:.2f}`\n"
-        f"⏰ *Epoch*: `{utc_str}`"
+        f"🛑 <b>Dynamic SL</b>: <code>${sl:.2f}</code>\n"
+        f"🎯 <b>Quant Target</b>: <code>${tp:.2f}</code>\n"
+        f"⏰ <b>Epoch</b>: <code>{utc_str}</code>"
     )
     async_telegram(card)
     print(f"[{setup_type}] {side} @ ${spot:.2f} | SL: ${sl:.2f} | TP: ${tp:.2f}")
 
-    # Async disk append
     def _disk_writer():
         trade_entry = pd.DataFrame([{
             "timestamp": utc_str, "action": f"SCALP_{side}", "price": spot,
@@ -176,11 +195,10 @@ def start_lse_stream():
     bootstrap_history(client)
 
     global current_candle, candle_history
+    print("[SYSTEM] Connecting to LSE WebSocket Feed (wss://data-ws.londonstrategicedge.com)...")
 
-    print(f"[SYSTEM] Connecting to LSE WebSocket Feed (wss://data-ws.londonstrategicedge.com)...")
-    
-    # Tick-Level Streaming Loop
-    for tick in client.stream("XAU/USD"):
+    # Correct SDK Call: list of symbols
+    for tick in client.stream(["XAU/USD"]):
         try:
             price = float(tick.price)
             now = time.time()
@@ -198,21 +216,20 @@ def start_lse_stream():
                     "open": price, "high": price, "low": price, "close": price
                 }
             else:
-                # Intra-bar Dynamic Updates
                 if price > current_candle["high"]:
                     current_candle["high"] = price
                 elif price < current_candle["low"]:
                     current_candle["low"] = price
                 current_candle["close"] = price
 
-            # Real-time Evaluation on every streaming tick
+            # Real-time Evaluation
             if len(candle_history) >= 25:
                 df = pd.DataFrame(candle_history + [current_candle])
-                evaluate_dynamic_scalp(df, price, macro_vector="BEARISH_PRESSURE")
+                live_macro = get_live_macro_impact()
+                evaluate_dynamic_scalp(df, price, macro_vector=live_macro)
 
         except Exception as e:
             print(f"[TICK ERROR] {e}")
 
 if __name__ == "__main__":
     start_lse_stream()
-            
