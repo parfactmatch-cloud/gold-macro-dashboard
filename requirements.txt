@@ -5,3 +5,5 @@ plotly
 pandas
 numpy
 requests
+websockets
+lse-data[frames]
