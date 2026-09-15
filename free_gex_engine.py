@@ -29,8 +29,17 @@ class GoldGEXEngine:
         delta_put = float(delta_call - 1.0)
         return gamma, delta_call, delta_put
 
-    def compute_gex(self, spot_xau: float) -> dict:
+    def compute_gex(self, spot_xau: float = None) -> dict:
         try:
+            # -----------------------------------------------------------------
+            # EDGE-CASE DEFENSIVE GUARD: Recover spot if omitted or invalid
+            # -----------------------------------------------------------------
+            if spot_xau is None or spot_xau <= 1500.0:
+                cached = self.read_cached_levels()
+                spot_xau = float(cached.get("spot_xau", 4300.0))
+                if spot_xau <= 1500.0:
+                    spot_xau = 4300.0
+
             gld = yf.Ticker("GLD")
             hist = gld.history(period="5d")
             if hist.empty:
@@ -196,11 +205,14 @@ class GoldGEXEngine:
                     cache = json.load(f)
                 cache["status"] = f"FALLBACK_DEGRADED: {str(err)}"
                 return cache
+            
+            fallback_spot = spot_xau if spot_xau is not None else 4300.0
             return {
                 "status": "FAILED",
+                "spot_xau": fallback_spot,
                 "call_wall_xau": 99999.0,
                 "put_wall_xau": 0.0,
-                "gamma_flip_xau": spot_xau,
+                "gamma_flip_xau": fallback_spot,
                 "net_dex_m": 0.0,
                 "gamma_blast_active": False,
                 "call_distance_telemetry": "Call: N/A",
@@ -219,6 +231,7 @@ class GoldGEXEngine:
                 pass
         return {
             "status": "NO_CACHE",
+            "spot_xau": 4300.0,
             "call_wall_xau": 99999.0,
             "put_wall_xau": 0.0,
             "net_dex_m": 0.0,
@@ -227,4 +240,4 @@ class GoldGEXEngine:
             "put_distance_telemetry": "Put: N/A",
             "is_corridor_valid": False
                     }
-            
+                    
