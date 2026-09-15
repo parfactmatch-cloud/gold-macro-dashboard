@@ -1,1 +1,16 @@
-{}
+{
+  "timestamp_utc": "2026-09-15 17:13:30 UTC",
+  "status": "HEALTHY",
+  "spot_xau": 4299.3,
+  "gld_close": 393.97,
+  "conv_ratio": 10.9128,
+  "call_wall_xau": 4365.1,
+  "put_wall_xau": 4255.98,
+  "gamma_flip_xau": 4348.74,
+  "net_dex_m": -1740.41,
+  "net_gamma_regime": "LONG_GAMMA_MEAN_REVERT",
+  "gamma_blast_active": false,
+  "call_distance_telemetry": "Call: +$65.80",
+  "put_distance_telemetry": "Put: +$43.32",
+  "is_corridor_valid": true
+}
