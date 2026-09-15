@@ -451,5 +451,11 @@ def execute_systematic_pipeline():
             log_entry.to_csv(TRADE_LOG_FILE, index=False)
         else:
             log_entry.to_csv(TRADE_LOG_FILE, mode='a', header=False, index=False)
-    else:
+        else:
+        print("[PIPELINE EQUILIBRIUM] No trade qualified. State: Neutral / Corridor Range.")
+
+# ================= 10. MAIN RUNNER ENTRYPOINT =================
+if __name__ == "__main__":
+    execute_systematic_pipeline()
+
      
