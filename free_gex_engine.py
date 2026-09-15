@@ -55,15 +55,27 @@ class GoldGEXEngine:
             total_call_dex = 0.0
             total_put_dex = 0.0
 
+            # -----------------------------------------------------------------
+            # SANITY CLAMP: Exclude strikes beyond +/- 20% of current GLD price
+            # (Prevents $9254 / $2258 extreme outlier corruption)
+            # -----------------------------------------------------------------
+            min_valid_strike = s_gld * 0.80
+            max_valid_strike = s_gld * 1.20
+
             for exp_str, T in valid_expiries:
-                chain = gld.option_chain(exp_str)
+                try:
+                    chain = gld.option_chain(exp_str)
+                except Exception:
+                    continue
                 
                 # Calls: Dealer Long Gamma (+), Short Underlying Hedge (-)
                 for _, row in chain.calls.iterrows():
                     strike = float(row["strike"])
-                    oi = float(row["openInterest"]) if not np.isnan(row["openInterest"]) else 0.0
-                    iv = float(row["impliedVolatility"]) if not np.isnan(row["impliedVolatility"]) else 0.0
-                    if oi > 0 and iv > 0.01:
+                    if not (min_valid_strike <= strike <= max_valid_strike):
+                        continue
+                    oi = float(row["openInterest"]) if not np.isnan(row.get("openInterest", 0.0)) else 0.0
+                    iv = float(row["impliedVolatility"]) if not np.isnan(row.get("impliedVolatility", 0.0)) else 0.0
+                    if oi > 0 and 0.05 <= iv <= 1.50:
                         gamma, d_call, _ = self._bsm_greeks(s_gld, strike, T, self.r, iv)
                         gex = gamma * oi * 100.0 * (s_gld ** 2) * 0.01
                         call_gex_map[strike] = call_gex_map.get(strike, 0.0) + gex
@@ -72,54 +84,50 @@ class GoldGEXEngine:
                 # Puts: Dealer Short Gamma (-), Long Underlying Hedge (+)
                 for _, row in chain.puts.iterrows():
                     strike = float(row["strike"])
-                    oi = float(row["openInterest"]) if not np.isnan(row["openInterest"]) else 0.0
-                    iv = float(row["impliedVolatility"]) if not np.isnan(row["impliedVolatility"]) else 0.0
-                    if oi > 0 and iv > 0.01:
+                    if not (min_valid_strike <= strike <= max_valid_strike):
+                        continue
+                    oi = float(row["openInterest"]) if not np.isnan(row.get("openInterest", 0.0)) else 0.0
+                    iv = float(row["impliedVolatility"]) if not np.isnan(row.get("impliedVolatility", 0.0)) else 0.0
+                    if oi > 0 and 0.05 <= iv <= 1.50:
                         gamma, _, d_put = self._bsm_greeks(s_gld, strike, T, self.r, iv)
                         gex = gamma * oi * 100.0 * (s_gld ** 2) * 0.01
-                        put_gex_map[strike] = put_gex_map.get(strike, 0.0) - gex
+                        put_gex_map[strike] = put_gex_map.get(strike, 0.0) + gex  # Store positive magnitude
                         total_put_dex += (abs(d_put) * oi * 100.0 * s_gld) / 1_000_000.0
 
             if not call_gex_map or not put_gex_map:
-                raise ValueError("Insufficient open interest in options chain.")
+                raise ValueError("Insufficient liquid open interest in options chain.")
 
             # -----------------------------------------------------------------
-            # 1. BOUNDARY SEGMENTATION & WALL RESOLUTION PATCH (GLD DOMAIN)
+            # 1. ROBUST PARTITIONING & COLLISION GUARD
             # -----------------------------------------------------------------
-            # Calls prioritized at or above spot; Puts prioritized at or below spot
+            # Call Wall strictly >= GLD Spot
             otm_calls = {k: v for k, v in call_gex_map.items() if k >= s_gld and v > 0}
-            otm_puts = {k: v for k, v in put_gex_map.items() if k <= s_gld and abs(v) > 0}
-
-            # Call Wall Selection (with global fallback)
             if otm_calls:
                 call_wall_gld = max(otm_calls, key=otm_calls.get)
             else:
-                valid_calls = {k: v for k, v in call_gex_map.items() if v > 0}
-                call_wall_gld = max(valid_calls, key=valid_calls.get) if valid_calls else s_gld * 1.03
+                call_wall_gld = max(call_gex_map, key=call_gex_map.get)
 
-            # Put Wall Selection (with global fallback)
+            # Put Wall strictly <= GLD Spot
+            otm_puts = {k: v for k, v in put_gex_map.items() if k <= s_gld and v > 0}
             if otm_puts:
-                put_wall_gld = min(otm_puts, key=otm_puts.get)
+                put_wall_gld = max(otm_puts, key=otm_puts.get)
             else:
-                valid_puts = {k: v for k, v in put_gex_map.items() if abs(v) > 0}
-                put_wall_gld = min(valid_puts, key=valid_puts.get) if valid_puts else s_gld * 0.97
+                put_wall_gld = max(put_gex_map, key=put_gex_map.get)
 
-            # Collision Guard: Agar ATM spike dono ko ek hi level par khinch le
-            if abs(call_wall_gld - put_wall_gld) < 0.5:
-                alt_puts = {k: v for k, v in put_gex_map.items() if k < call_wall_gld and abs(v) > 0}
-                if alt_puts:
-                    put_wall_gld = min(alt_puts, key=alt_puts.get)
+            # Strict Boundary Enforcer (Guarantees Put Wall < Call Wall)
+            if put_wall_gld >= call_wall_gld:
+                sub_puts = {k: v for k, v in put_gex_map.items() if k < call_wall_gld and v > 0}
+                if sub_puts:
+                    put_wall_gld = max(sub_puts, key=sub_puts.get)
                 else:
-                    alt_calls = {k: v for k, v in call_gex_map.items() if k > put_wall_gld and v > 0}
-                    if alt_calls:
-                        call_wall_gld = max(alt_calls, key=alt_calls.get)
+                    put_wall_gld = round(call_wall_gld * 0.98, 2)
 
-            # Convert to CME GC1! / Spot XAU Parity
+            # Convert to Spot/Futures XAU Parity
             call_wall_xau = round(call_wall_gld * conv_ratio, 2)
             put_wall_xau = round(put_wall_gld * conv_ratio, 2)
 
             # -----------------------------------------------------------------
-            # 2. TELEMETRY STRING FORMATTER (ELIMINATES DOUBLE-NEGATIVE BUG)
+            # 2. TELEMETRY CLEAN STRING FORMATTER (NO -$-75 BUG)
             # -----------------------------------------------------------------
             call_dist = call_wall_xau - spot_xau
             put_dist = spot_xau - put_wall_xau
@@ -132,17 +140,31 @@ class GoldGEXEngine:
 
             is_corridor_valid = put_wall_xau < spot_xau < call_wall_xau
 
-            # Net Gamma Profile
+            # -----------------------------------------------------------------
+            # 3. ACCURATE GAMMA FLIP (ATM CLUSTER SEARCH)
+            # -----------------------------------------------------------------
             strikes = sorted(list(set(call_gex_map.keys()) | set(put_gex_map.keys())))
-            net_gex = [call_gex_map.get(k, 0.0) + put_gex_map.get(k, 0.0) for k in strikes]
-            total_net_gex = sum(net_gex)
+            net_gex_dict = {k: call_gex_map.get(k, 0.0) - put_gex_map.get(k, 0.0) for k in strikes}
+            total_net_gex = sum(net_gex_dict.values())
 
+            # Find zero-crossing closest to current spot (not at extremes)
             gamma_flip_gld = s_gld
+            best_diff = float("inf")
             for i in range(len(strikes) - 1):
-                if net_gex[i] * net_gex[i + 1] <= 0:
-                    gamma_flip_gld = strikes[i]
-                    break
+                k1, k2 = strikes[i], strikes[i + 1]
+                v1, v2 = net_gex_dict[k1], net_gex_dict[k2]
+                if v1 * v2 <= 0:
+                    midpoint = (k1 + k2) / 2.0
+                    diff = abs(midpoint - s_gld)
+                    if diff < best_diff:
+                        best_diff = diff
+                        gamma_flip_gld = midpoint
 
+            # Fallback if no sign flip within +/- 10%
+            if best_diff == float("inf"):
+                gamma_flip_gld = s_gld
+
+            gamma_flip_xau = round(gamma_flip_gld * conv_ratio, 2)
             net_dex_m = round(total_call_dex - total_put_dex, 2)
             gamma_blast_active = (total_net_gex < 0) and (abs(net_dex_m) >= 8.0)
 
@@ -154,7 +176,7 @@ class GoldGEXEngine:
                 "conv_ratio": round(conv_ratio, 4),
                 "call_wall_xau": call_wall_xau,
                 "put_wall_xau": put_wall_xau,
-                "gamma_flip_xau": round(gamma_flip_gld * conv_ratio, 2),
+                "gamma_flip_xau": gamma_flip_xau,
                 "net_dex_m": net_dex_m,
                 "net_gamma_regime": "LONG_GAMMA_MEAN_REVERT" if total_net_gex > 0 else "SHORT_GAMMA_EXPANSION",
                 "gamma_blast_active": bool(gamma_blast_active),
@@ -204,5 +226,5 @@ class GoldGEXEngine:
             "call_distance_telemetry": "Call: N/A",
             "put_distance_telemetry": "Put: N/A",
             "is_corridor_valid": False
-                        }
-                    
+                    }
+            
