@@ -1,6 +1,7 @@
 """
 LSE Isolated Macro & Options GEX/DEX Sync Engine
 - Fetches US10Y Bond Yields from London Strategic Edge API -> saves to 'lse_macro.csv'
+- Ingests CFTC COT Data (Hedge Funds vs Commercials) & Economic News Shield via 'lse_news_sentiment.py'
 - Computes SPDR Gold Shares (GLD) dealer Gamma Walls, Net DEX & Blast Squeeze -> saves to 'gex_levels.json'
 - Multi-Source Spot Feed: Spot XAUUSD (Stooq/Binance) -> CME Futures (GC=F) -> GLD Basket
 - Aligned with Spot CFD Execution & Dynamic Basis Normalization
@@ -12,8 +13,15 @@ import requests
 import pandas as pd
 from datetime import datetime, timezone
 
-# GEX & DEX Engine Import (free_gex_engine.py must reside in the same execution path)
+# GEX & DEX Engine Import
 from free_gex_engine import GoldGEXEngine
+
+# News & COT Sentiment Engine Import
+try:
+    from lse_news_sentiment import fetch_and_analyze_cot, evaluate_news_shield_and_sentiment
+except ImportError:
+    fetch_and_analyze_cot = None
+    evaluate_news_shield_and_sentiment = None
 
 # Centralized Telegram Engine Broadcast Import with Fallback Handling
 try:
@@ -46,16 +54,17 @@ def send_direct_telegram_pulse(
     blast_active: bool = False,
     telemetry_call: str = "Call: N/A",
     telemetry_put: str = "Put: N/A",
-    is_corridor_valid: bool = True
+    is_corridor_valid: bool = True,
+    cot_bias: str = "NEUTRAL",
+    news_shield_active: bool = False
 ):
-    """Direct, robust HTML Telegram dispatcher that prevents double-negative glitches & entity parse errors."""
+    """Direct, robust HTML Telegram dispatcher with Macro, COT, and News Shield integration."""
     if not TELEGRAM_BOT_TOKEN or not TELEGRAM_CHAT_ID:
         print("[TG CRITICAL] TELEGRAM_BOT_TOKEN or TELEGRAM_CHAT_ID is missing from environment variables!")
         return
 
     now_utc = datetime.now(timezone.utc).strftime("%H:%M UTC | %d %b %Y")
 
-    # Fixed: Only announce bypass if blast is active AND boundaries are physically breached
     if blast_active and (spot >= call_wall or spot <= put_wall):
         barrier_status = "🚀 <b>GAMMA BLAST REGIME</b>: High directional flow detected. Dealer walls in squeeze bypass mode."
     elif not is_corridor_valid or spot <= put_wall or spot >= call_wall:
@@ -69,12 +78,17 @@ def send_direct_telegram_pulse(
     regime_tag = "🟩 LONG GAMMA (Mean-Reverting)" if "LONG_GAMMA" in regime else "🟥 SHORT GAMMA (Volatility Expansion)"
     macro_icon = "🟢" if us10y_impact == "BULLISH_TAILWIND" else ("🔴" if us10y_impact == "BEARISH_PRESSURE" else "⚪")
     dex_bias = "🟢 Dealer Net Long" if net_dex > 0 else ("🔴 Dealer Net Short" if net_dex < 0 else "⚪ Neutral")
+    
+    shield_status = "🛡️ <b>News Shield</b>: 🔴 <code>ACTIVE FREEZE</code> (High-Impact Event Window)" if news_shield_active else "🛡️ <b>News Shield</b>: 🟢 <code>STANDBY (Safe to Execute)</code>"
+    cot_display = f"🏛 <b>COT Positioning</b>: <code>{cot_bias}</code>"
 
     html_card = (
         f"📡 <b>INSTITUTIONAL MARKET RADAR PULSE</b>\n"
         f"━━━━━━━━━━━━━━━━━━━━━━━\n"
         f"💵 <b>Live Spot (CFD Parity)</b>: <code>${spot:.2f}</code>\n"
         f"🏛 <b>US10Y Yield</b>: <code>{us10y_yield:.2f}%</code> {macro_icon} <code>{us10y_impact}</code>\n"
+        f"{cot_display}\n"
+        f"{shield_status}\n"
         f"⚡ <b>Dealer Regime</b>: {regime_tag}\n"
         f"⚖️ <b>Net Delta (DEX)</b>: <code>{net_dex:+.1f}M</code> ({dex_bias})\n"
         f"━━━━━━━━━━━━━━━━━━━━━━━\n"
@@ -105,6 +119,7 @@ def send_direct_telegram_pulse(
         raw_text = (
             f"📡 INSTITUTIONAL MARKET RADAR PULSE\n"
             f"Spot: ${spot:.2f} | US10Y: {us10y_yield:.2f}% ({us10y_impact})\n"
+            f"COT Bias: {cot_bias} | Shield Active: {news_shield_active}\n"
             f"Call Wall: ${call_wall:.2f} | Put Wall: ${put_wall:.2f} | Flip: ${gamma_flip:.2f}\n"
             f"Net DEX: {net_dex:+.1f}M | Blast Active: {blast_active}\n"
             f"Status: {clean_status}\n"
@@ -235,6 +250,7 @@ def run_sync():
     
     # 1. Fetch US10Y Bond Yield
     latest_val = 0.0
+    delta_yield = 0.0
     gold_macro_impact = "NEUTRAL"
     df_us10y = fetch_lse_series("US10Y", limit=5)
     
@@ -244,24 +260,49 @@ def run_sync():
         delta_yield = round(latest_val - prev_val, 4)
 
         gold_macro_impact = "BEARISH_PRESSURE" if delta_yield > 0.02 else ("BULLISH_TAILWIND" if delta_yield < -0.02 else "NEUTRAL")
-
-        record = pd.DataFrame([{
-            "timestamp": datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S"),
-            "us10y_yield": latest_val,
-            "yield_delta": delta_yield,
-            "gold_macro_impact": gold_macro_impact
-        }])
-
-        record.to_csv(LSE_MACRO_FILE, index=False)
         print(f"[LSE SUCCESS] US10Y: {latest_val}% (Δ {delta_yield:+.2f}) -> Impact: {gold_macro_impact}")
     else:
-        print("[LSE SYNC WARN] Macro yield series skipped or failed. Retaining prior lse_macro.csv state.")
+        print("[LSE SYNC WARN] Macro yield series skipped or failed.")
 
-    # 2. Options Gamma & Delta Exposure (GEX/DEX) Calculation using Spot Parity
+    # 2. Ingest COT Data & Economic News Shield Analysis
+    cot_bias = "NEUTRAL"
+    news_shield_active = False
+    news_sentiment = "NEUTRAL"
+
+    if fetch_and_analyze_cot is not None:
+        try:
+            cot_res = fetch_and_analyze_cot(symbol="GC")
+            cot_bias = cot_res.get("bias", "NEUTRAL")
+        except Exception as e:
+            print(f"[COT INGEST ERROR] {e}")
+
+    if evaluate_news_shield_and_sentiment is not None:
+        try:
+            shield_res = evaluate_news_shield_and_sentiment()
+            news_shield_active = bool(shield_res.get("shield_active", False))
+            news_sentiment = shield_res.get("sentiment", "NEUTRAL")
+            print(f"[SHIELD STATUS] Active: {news_shield_active} | Sentiment: {news_sentiment}")
+        except Exception as e:
+            print(f"[SHIELD INGEST ERROR] {e}")
+
+    # Persist Unified Institutional Macro State
+    record = pd.DataFrame([{
+        "timestamp": datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S"),
+        "us10y_yield": latest_val,
+        "yield_delta": delta_yield,
+        "gold_macro_impact": gold_macro_impact,
+        "cot_bias": cot_bias,
+        "news_shield_active": news_shield_active,
+        "news_sentiment": news_sentiment
+    }])
+    record.to_csv(LSE_MACRO_FILE, index=False)
+    print(f"[MACRO PERSIST] Saved telemetry matrix to {LSE_MACRO_FILE}")
+
+    # 3. Options Gamma & Delta Exposure (GEX/DEX) Calculation using Spot Parity
     spot_xau = fetch_live_gold_spot()
     gex_data = sync_gex(spot_price=spot_xau)
 
-    # 3. Guaranteed Periodic Market Radar Telemetry Dispatch
+    # 4. Guaranteed Periodic Market Radar Telemetry Dispatch
     print("[PULSE DISPATCH] Initiating Telegram Pulse Trigger...")
     if gex_data and gex_data.get("status") in ["HEALTHY", "FALLBACK_DEGRADED"]:
         call_wall = float(gex_data.get("call_wall_xau", 0.0))
@@ -309,11 +350,13 @@ def run_sync():
                 blast_active=blast_active,
                 telemetry_call=telemetry_call,
                 telemetry_put=telemetry_put,
-                is_corridor_valid=is_corridor_valid
+                is_corridor_valid=is_corridor_valid,
+                cot_bias=cot_bias,
+                news_shield_active=news_shield_active
             )
     else:
         print("[PULSE SKIPPED] GEX calculation payload degraded or missing.")
 
 if __name__ == "__main__":
     run_sync()
-                              
+                
