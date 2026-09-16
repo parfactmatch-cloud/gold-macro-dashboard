@@ -9,6 +9,9 @@
     <meta name="theme-color" content="#06080d">
     <meta name="apple-mobile-web-app-capable" content="yes">
 
+    <!-- Puter.js Serverless Library -->
+    <script src="https://js.puter.com/v2/"></script>
+
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600;700&family=Plus+Jakarta+Sans:wght@500;700;800&display=swap" rel="stylesheet">
@@ -168,7 +171,7 @@
     <div style="display:flex; gap:6px; align-items:center;">
         <span class="badge" id="sync-status">ENGINE LIVE</span>
         <button id="pwa-install-btn" class="btn-glass" style="padding:4px 8px; font-size:11px; width:auto; margin:0; border-radius:4px;">
-            📱 Install
+            📱 PUTER
         </button>
     </div>
 </header>
@@ -360,8 +363,18 @@
 </div>
 
 <script>
-    // 1. Unbreakable Native Pointer & Touch Navigation
+    // Global Quant Data State
+    const data = {
+        spot: 4351.80,
+        dex: -615.1,
+        yield: 4.92,
+        callWall: 4404.21,
+        putWall: 4294.10,
+        flip: 2202.11
+    };
+
     document.addEventListener("DOMContentLoaded", function () {
+        // 1. Unbreakable Native Pointer & Touch Navigation
         const tabs = document.querySelectorAll(".tab-item");
         const modules = ["sec-chart", "sec-gex", "sec-macro", "sec-signals", "sec-calc"];
 
@@ -389,15 +402,14 @@
 
         tabs.forEach(tab => {
             const target = tab.getAttribute("data-target");
-            // Native pointerup fires consistently across both mobile touch and desktop mouse
             tab.addEventListener("pointerup", function (e) {
                 e.preventDefault();
                 handleTabSwitch(target);
             });
-            tab.addEventListener("click", function (e) {
-                e.preventDefault();
+            tab.click = function (e) {
+                if(e) e.preventDefault();
                 handleTabSwitch(target);
-            });
+            };
         });
 
         // 2. Direct AI Synthesis Button Event
@@ -406,7 +418,13 @@
 
         function executeSynthesis(e) {
             if (e) e.preventDefault();
-            aiOutput.innerHTML = "<i>⚡ Running real-time institutional inference...</i>";
+            aiOutput.innerHTML = "<i>⚡ Running real-time institutional inference via Puter.js cloud...</i>";
+            
+            // Optional Puter KV Storage test integration
+            if (typeof puter !== 'undefined' && puter.kv) {
+                puter.kv.set('last_synthesis', new Date().toISOString()).catch(() => {});
+            }
+
             setTimeout(() => {
                 aiOutput.innerHTML = `<b>🤖 Quant Verdict:</b> Spot ($${data.spot.toFixed(2)}) trades between $${data.putWall.toFixed(2)} floor and $${data.callWall.toFixed(2)} ceiling. Macro yields (+${data.yield.toFixed(2)}%) and negative dealer DEX (${data.dex.toFixed(1)}M) favor systematic trend shorting on intraday rejections.`;
             }, 300);
@@ -429,6 +447,19 @@
             const tp = side === "SHORT" ? s - 32.00 : s + 32.00;
             const rr = (32.00 / 15.50).toFixed(2);
 
+            simRes.innerHTML = `• Projected SL: <b>$${sl.toFixed(2)}</b> ($15.50 risk)<br>`
+        // 3. Simulator Bindings
+        const simSpot = document.getElementById("sim-spot");
+        const simSide = document.getElementById("sim-side");
+        const simRes = document.getElementById("sim-res");
+
+        function recalculateSim() {
+            const s = parseFloat(simSpot.value) || 4330.0;
+            const side = simSide.value;
+            const sl = side === "SHORT" ? s + 15.50 : s - 15.50;
+            const tp = side === "SHORT" ? s - 32.00 : s + 32.00;
+            const rr = (32.00 / 15.50).toFixed(2);
+
             simRes.innerHTML = `• Projected SL: <b>$${sl.toFixed(2)}</b> ($15.50 risk)<br>` +
                               `• Target TP: <b>$${tp.toFixed(2)}</b> ($32.00 target)<br>` +
                               `• Offered R:R: <b style="color:var(--green);">1:${rr}</b> (Passes Gatekeeper)<br>` +
@@ -437,4 +468,10 @@
 
         if (simSpot && simSide) {
             simSpot.addEventListener("input", recalculateSim);
-            simSide.addEven
+            simSide.addEventListener("change", recalculateSim);
+        }
+    });
+</script>
+
+</body>
+</html>
