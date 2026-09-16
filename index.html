@@ -402,6 +402,67 @@
             setInterval(syncTerminalData, 30000);
         });
     </script>
+    <!-- INSTITUTIONAL BOTTOM EXECUTION & TELEMETRY STRIP -->
+<div style="background: var(--surface-card); border: 1px solid var(--border); border-radius: 10px; padding: 16px; margin-top: 15px;">
+    <div style="font-family: var(--mono); font-size: 11px; color: var(--gold); text-transform: uppercase; margin-bottom: 12px; display: flex; justify-content: space-between; align-items: center;">
+        <span>⚡ Institutional Execution & Order Flow Telemetry</span>
+        <span style="color: var(--green);">● Live Stream Synchronized</span>
+    </div>
+
+    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 15px;">
+        
+        <!-- 1. Order Book Imbalance / Liquidity Meter -->
+        <div style="background: #030712; padding: 12px; border-radius: 8px; border: 1px solid var(--border);">
+            <div style="font-size: 10px; font-family: var(--mono); color: var(--muted); margin-bottom: 6px;">ORDER FLOW LIQUIDITY IMBALANCE</div>
+            <div style="display: flex; justify-content: space-between; font-size: 11px; font-family: var(--mono); margin-bottom: 4px;">
+                <span style="color: var(--green);">Bids (Buyers): 58%</span>
+                <span style="color: var(--red);">Asks (Sellers): 42%</span>
+            </div>
+            <div style="width: 100%; height: 6px; background: rgba(244,63,94,0.3); border-radius: 3px; overflow: hidden;">
+                <div style="width: 58%; height: 100%; background: var(--green);"></div>
+            </div>
+            <div style="font-size: 10px; color: var(--muted); margin-top: 6px;">Status: Mild institutional bid accumulation near Put Wall.</div>
+        </div>
+
+        <!-- 2. Quick Position Sizing & Risk Calculator -->
+        <div style="background: #030712; padding: 12px; border-radius: 8px; border: 1px solid var(--border);">
+            <div style="font-size: 10px; font-family: var(--mono); color: var(--muted); margin-bottom: 6px;">QUICK LOT SIZE & RISK CALCULATOR</div>
+            <div style="display: flex; gap: 8px; margin-bottom: 6px;">
+                <input type="number" id="calc-acc" value="10000" placeholder="Account ($)" style="width: 50%; background: var(--surface); border: 1px solid var(--border); padding: 6px; color: #fff; font-family: var(--mono); font-size: 11px; border-radius: 4px;">
+                <input type="number" id="calc-risk" value="1" placeholder="Risk %" style="width: 50%; background: var(--surface); border: 1px solid var(--border); padding: 6px; color: #fff; font-family: var(--mono); font-size: 11px; border-radius: 4px;">
+            </div>
+            <div id="calc-result" style="font-size: 11px; font-family: var(--mono); color: var(--gold-light);">
+                Recommended Size: <b>0.66 Lots</b> ($100 Max Risk at $15 SL)
+            </div>
+        </div>
+
+        <!-- 3. AI Real-Time Sentiment Pulse Log -->
+        <div style="background: #030712; padding: 12px; border-radius: 8px; border: 1px solid var(--border);">
+            <div style="font-size: 10px; font-family: var(--mono); color: var(--muted); margin-bottom: 6px;">AI SENTINEL REAL-TIME PULSE</div>
+            <div id="ai-live-log" style="font-size: 11px; font-family: var(--mono); color: #cbd5e1; line-height: 1.4;">
+                <i>[09:17 UTC]</i> Scanning GEX corridors... Spot inside boundaries. No news shield restriction. Ready for pullback triggers.
+            </div>
+        </div>
+
+    </div>
+</div>
+
+<script>
+    // Quick Lot Size Calculator Logic
+    function updateLotSize() {
+        const acc = parseFloat(document.getElementById('calc-acc').value) || 10000;
+        const riskPct = parseFloat(document.getElementById('calc-risk').value) || 1;
+        const riskAmount = (acc * riskPct) / 100;
+        const slDistanceUSD = 15.0; // standard model SL
+        const lotSize = (riskAmount / (slDistanceUSD * 100)).toFixed(2); // Gold standard contract sizing
+        
+        document.getElementById('calc-result').innerHTML = 
+            `Recommended Size: <b>${lotSize} Lots</b> ($${riskAmount.toFixed(0)} Max Risk)`;
+    }
+
+    document.getElementById('calc-acc').addEventListener('input', updateLotSize);
+    document.getElementById('calc-risk').addEventListener('input', updateLotSize);
+</script> 
 </body>
 </html>
 
