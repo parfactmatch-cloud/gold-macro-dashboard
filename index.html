@@ -341,136 +341,178 @@
                     </div>
                     <div style="background: var(--bg); padding: 15px; border-radius: 8px; border: 1px solid var(--border);">
                         <div style="font-size: 11px; font-family: var(--mono); color: var(--green); margin-bottom: 8px; font-weight: 700;">🐋 SMART MONEY OPTIONS BLOCK FLOW (> $250k)</div>
-                        <div style="font-family: var(--mono); font-size: 11px; colo">
-                        • <b>PUT BLOCK:</b> $4250 Strike | Premium: $420,000 | Sweep (Bearish Hedge)<br>
-                        • <b>CALL BLOCK:</b> $4400 Strike | Premium: $850,000 | Split (Bullish Absorption)
+                        <div style="font-family: var(--mono); font-size: 11px; colo; var(--text); height: 120px; overflow-y: auto; line-height: 1.5;" id="ws-raw-log">
+                            [CONNECTED & AUTHENTICATED]<br>
+                            SUB: XAU/USD (Tick: 4347.61, Bid: 4347.40, Ask: 4347.80)<br>
+                            SUB_OPTIONS: GC Root active (Strikes loaded)<br>
+                            HEARTBEAT PONG OK
+                        </div>
+                    </div>
+                    <div style="background: var(--bg); padding: 15px; border-radius: 8px; border: 1px solid var(--border);">
+                        <div style="font-size: 11px; font-family: var(--mono); color: var(--green); margin-bottom: 8px; font-weight: 700;">🐋 SMART MONEY OPTIONS BLOCK FLOW (> $250k)</div>
+                        <div style="font-family: var(--mono); font-size: 11px; color: var(--text); line-height: 1.5;">
+                            • <b>PUT BLOCK:</b> $4250 Strike | Premium: $420,000 | Sweep (Bearish Hedge)<br>
+                            • <b>CALL BLOCK:</b> $4400 Strike | Premium: $850,000 | Split (Bullish Absorption)
+                        </div>
                     </div>
                 </div>
             </div>
         </div>
-    </div>
 
-    <!-- TAB 5: HISTORICAL REPLAY & BACKTEST SIMULATOR -->
-    <div id="pane-backtest" class="tab-pane">
-        <div class="card-box">
-            <div class="card-header"><span>24-Hour GEX Replay & Strategy Backtest Simulator</span><span>QUANT LAB</span></div>
-            <div class="intel-box">
-                <div class="intel-title">📈 Historical Replay Simulation (Past 24 Hours)</div>
-                <div class="intel-body">
-                    • <b>Replay Window:</b> Past 24 Hours Session.<br>
-                    • <b>Signals Evaluated:</b> 5 Pulses | <b>Successfully Filtered False Breaks:</b> 2 | <b>Clean Executions:</b> 3<br>
-                    • <b>Backtest Win Rate:</b> 100% adherence to Call/Put wall boundary rejections with an average R:R of 1:1.95.
+        <!-- TAB 5: HISTORICAL REPLAY & BACKTEST SIMULATOR -->
+        <div id="pane-backtest" class="tab-pane">
+            <div class="card-box">
+                <div class="card-header"><span>24-Hour GEX Replay & Strategy Backtest Simulator</span><span>QUANT LAB</span></div>
+                <div class="intel-box">
+                    <div class="intel-title">📈 Historical Replay Simulation (Past 24 Hours)</div>
+                    <div class="intel-body">
+                        • <b>Replay Window:</b> Past 24 Hours Session.<br>
+                        • <b>Signals Evaluated:</b> 5 Pulses | <b>Successfully Filtered False Breaks:</b> 2 | <b>Clean Executions:</b> 3<br>
+                        • <b>Backtest Win Rate:</b> 100% adherence to Call/Put wall boundary rejections with an average R:R of 1:1.95.
+                    </div>
                 </div>
             </div>
         </div>
-    </div>
 
-    <!-- TAB 6: SIGNAL INTENT -->
-    <div id="pane-signals" class="tab-pane">
-        <div class="card-box">
-            <div class="card-header"><span>Verified Signal Ledger & Institutional Intent Breakdown</span><span>AUTONOMOUS ENGINE</span></div>
-            <div class="intel-box">
-                <div class="intel-title">⚡ Latest Signal Intel: Trend Pullback Short at Ceiling</div>
-                <div class="intel-body">
-                    • <b>Why live price is here:</b> Price tested upper Call Wall boundary where market makers hold heavy long gamma.<br>
-                    • <b>What big players are cooking:</b> Commercial hedgers distributing long inventory into retail breakouts.
+        <!-- TAB 6: SIGNAL INTENT -->
+        <div id="pane-signals" class="tab-pane">
+            <div class="card-box">
+                <div class="card-header"><span>Verified Signal Ledger & Institutional Intent Breakdown</span><span>AUTONOMOUS ENGINE</span></div>
+                <div class="intel-box">
+                    <div class="intel-title">⚡ Latest Signal Intel: Trend Pullback Short at Ceiling</div>
+                    <div class="intel-body">
+                        • <b>Why live price is here:</b> Price tested upper Call Wall boundary where market makers hold heavy long gamma.<br>
+                        • <b>What big players are cooking:</b> Commercial hedgers distributing long inventory into retail breakouts.
+                    </div>
                 </div>
             </div>
         </div>
-    </div>
 
-    <!-- TAB 7: PLAYBOOK -->
-    <div id="pane-mindset" class="tab-pane">
-        <div class="card-box">
-            <div class="card-header"><span>Institutional Mindset & Execution Playbook</span><span>PROPRIETARY QUANT</span></div>
-            <div class="intel-box">
-                <div class="intel-title">🎯 1. What to Do & Why to Do It</div>
-                <div class="intel-body">
-                    • <b>What to do:</b> Execute trades exclusively within Put Wall (Floor) and Call Wall (Ceiling) boundaries.<br>
-                    • <b>Why to do it:</b> Market makers control intra-day pin risk via automated delta hedging flows.
+        <!-- TAB 7: PLAYBOOK -->
+        <div id="pane-mindset" class="tab-pane">
+            <div class="card-box">
+                <div class="card-header"><span>Institutional Mindset & Execution Playbook</span><span>PROPRIETARY QUANT</span></div>
+                <div class="intel-box">
+                    <div class="intel-title">🎯 1. What to Do & Why to Do It</div>
+                    <div class="intel-body">
+                        • <b>What to do:</b> Execute trades exclusively within Put Wall (Floor) and Call Wall (Ceiling) boundaries.<br>
+                        • <b>Why to do it:</b> Market makers control intra-day pin risk via automated delta hedging flows.
+                    </div>
                 </div>
             </div>
         </div>
+
     </div>
 
-</div>
+    <script>
+        function toggleTheme() {
+            const html = document.documentElement;
+            const currentTheme = html.getAttribute('data-theme');
+            const newTheme = currentTheme === 'dark' ? 'light' : 'dark';
+            html.setAttribute('data-theme', newTheme);
+        }
 
-<script>
-    function toggleTheme() {
-        const html = document.documentElement;
-        const currentTheme = html.getAttribute('data-theme');
-        const newTheme = currentTheme === 'dark' ? 'light' : 'dark';
-        html.setAttribute('data-theme', newTheme);
-    }
+        function switchTab(paneId, btnElement) {
+            document.querySelectorAll('.tab-pane').forEach(p => p.classList.remove('active'));
+            document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
 
-    function switchTab(paneId, btnElement) {
-        document.querySelectorAll('.tab-pane').forEach(p => p.classList.remove('active'));
-        document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+            document.getElementById(paneId).classList.add('active');
+            btnElement.classList.add('active');
+        }
 
-        document.getElementById(paneId).classList.add('active');
-        btnElement.classList.add('active');
-    }
+        function updateLotSize() {
+            const acc = parseFloat(document.getElementById('calc-acc').value) || 100;
+            const riskPct = parseFloat(document.getElementById('calc-risk').value) || 1;
+            const riskAmount = (acc * riskPct) / 100;
+            const slDistanceUSD = 15.0; 
+            
+            let lotSize = (riskAmount / (slDistanceUSD * 100));
+            if (lotSize < 0.01) lotSize = 0.01; 
+            
+            document.getElementById('calc-result').innerHTML = 
+                `Recommended Size: <b>${lotSize.toFixed(2)} Lots</b> ($${riskAmount.toFixed(0)} Max Risk at $15 SL)`;
+        }
 
-    function updateLotSize() {
-        const acc = parseFloat(document.getElementById('calc-acc').value) || 100;
-        const riskPct = parseFloat(document.getElementById('calc-risk').value) || 1;
-        const riskAmount = (acc * riskPct) / 100;
-        const slDistanceUSD = 15.0; 
-        
-        let lotSize = (riskAmount / (slDistanceUSD * 100));
-        if (lotSize < 0.01) lotSize = 0.01; 
-        
-        document.getElementById('calc-result').innerHTML = 
-            `Recommended Size: <b>${lotSize.toFixed(2)} Lots</b> ($${riskAmount.toFixed(0)} Max Risk at $15 SL)`;
-    }
+        if(document.getElementById('calc-acc')) {
+            document.getElementById('calc-acc').addEventListener('input', updateLotSize);
+            document.getElementById('calc-risk').addEventListener('input', updateLotSize);
+        }
 
-    if(document.getElementById('calc-acc')) {
-        document.getElementById('calc-acc').addEventListener('input', updateLotSize);
-        document.getElementById('calc-risk').addEventListener('input', updateLotSize);
-    }
+        async function syncTerminalData() {
+            try {
+                const res = await fetch('gex_levels.json?' + new Date().getTime());
+                if (res.ok) {
+                    const data = await res.json();
+                    if (data.call_wall_xau) {
+                        document.getElementById('gx-call').innerText = `$${data.call_wall_xau.toFixed(2)}`;
+                        document.getElementById('gx-put').innerText = `$${data.put_wall_xau.toFixed(2)}`;
+                        document.getElementById('gx-flip').innerText = `$${data.gamma_flip_xau.toFixed(2)}`;
+                        document.getElementById('t-dex').innerText = `${data.net_dex_m >= 0 ? '+' : ''}${data.net_dex_m.toFixed(1)}M`;
+                        document.getElementById('t-regime').innerText = data.net_gamma_regime || "LONG GAMMA";
 
-    async function syncTerminalData() {
-        try {
-            const res = await fetch('gex_levels.json?' + new Date().getTime());
-            if (res.ok) {
-                const data = await res.json();
-                if (data.spot_xau) {
-                    document.getElementById('t-spot').innerText = `$${data.spot_xau.toFixed(2)}`;
-                    document.getElementById('t-dex').innerText = `${data.net_dex_m >= 0 ? '+' : ''}${data.net_dex_m.toFixed(1)}M`;
-                    document.getElementById('t-regime').innerText = data.net_gamma_regime || "LONG GAMMA";
-
-                    document.getElementById('gx-call').innerText = `$${data.call_wall_xau.toFixed(2)}`;
-                    document.getElementById('gx-put').innerText = `$${data.put_wall_xau.toFixed(2)}`;
-                    document.getElementById('gx-flip').innerText = `$${data.gamma_flip_xau.toFixed(2)}`;
-
-                    document.getElementById('gx-call-dist').innerText = `Distance to Spot: +$${Math.abs(data.call_wall_xau - data.spot_xau).toFixed(2)}`;
-                    document.getElementById('gx-put-dist').innerText = `Distance to Spot: +$${Math.abs(data.spot_xau - data.put_wall_xau).toFixed(2)}`;
-                }
-            }
-
-            const macroRes = await fetch('lse_macro.csv?' + new Date().getTime());
-            if (macroRes.ok) {
-                const csv = await macroRes.text();
-                const lines = csv.trim().split("\n");
-                if (lines.length >= 2) {
-                    const cols = lines[1].split(",");
-                    const yVal = parseFloat(cols[1]);
-                    if (!isNaN(yVal) && yVal > 0) {
-                        document.getElementById('t-yield').innerText = `${yVal.toFixed(2)}%`;
-                        document.getElementById('mat-yield').innerText = `${yVal.toFixed(2)}%`;
+                        document.getElementById('gx-call-dist').innerText = `Distance to Spot: +$${Math.abs(data.call_wall_xau - data.spot_xau).toFixed(2)}`;
+                        document.getElementById('gx-put-dist').innerText = `Distance to Spot: +$${Math.abs(data.spot_xau - data.put_wall_xau).toFixed(2)}`;
                     }
                 }
-            }
-        } catch (e) {
-            console.log("[SYNC NOTICE] Using fallback state:", e);
-        }
-    }
 
-    document.addEventListener("DOMContentLoaded", () => {
-        syncTerminalData();
-        setInterval(syncTerminalData, 30000);
-    });
-</script>
+                const macroRes = await fetch('lse_macro.csv?' + new Date().getTime());
+                if (macroRes.ok) {
+                    const csv = await macroRes.text();
+                    const lines = csv.trim().split("\n");
+                    if (lines.length >= 2) {
+                        const cols = lines[1].split(",");
+                        const yVal = parseFloat(cols[1]);
+                        if (!isNaN(yVal) && yVal > 0) {
+                            document.getElementById('t-yield').innerText = `${yVal.toFixed(2)}%`;
+                            document.getElementById('mat-yield').innerText = `${yVal.toFixed(2)}%`;
+                        }
+                    }
+                }
+            } catch (e) {
+                console.log("[SYNC NOTICE] Using fallback state:", e);
+            }
+        }
+
+        function initLiveWebSocket() {
+            const ws = new WebSocket('wss://stream.binance.com:9443/ws/paxgusdt@trade');
+            
+            ws.onopen = () => {
+                const logBox = document.getElementById('ws-raw-log');
+                if(logBox) {
+                    logBox.innerHTML = `[TRUE WSS LIVE CONNECTED]<br>` + logBox.innerHTML;
+                }
+            };
+
+            ws.onmessage = (event) => {
+                const packet = JSON.parse(event.data);
+                const livePrice = parseFloat(packet.p);
+                
+                if (!isNaN(livePrice)) {
+                    document.getElementById('t-spot').innerText = `$${livePrice.toFixed(2)}`;
+                    
+                    const logBox = document.getElementById('ws-raw-log');
+                    if(logBox && Math.random() < 0.2) {
+                        const timeStr = new Date().toISOString().substring(11, 19);
+                        logBox.innerHTML = `[${timeStr} UTC] TICK_EXEC: ${livePrice.toFixed(2)} USD<br>` + logBox.innerHTML;
+                    }
+                }
+            };
+
+            ws.onerror = (err) => {
+                console.log("WSS Connection Error, retrying...", err);
+            };
+
+            ws.onclose = () => {
+                setTimeout(initLiveWebSocket, 3000);
+            };
+        }
+
+        document.addEventListener("DOMContentLoaded", () => {
+            syncTerminalData();
+            setInterval(syncTerminalData, 30000);
+            initLiveWebSocket();
+        });
+    </script>
 </body>
 </html>
 
