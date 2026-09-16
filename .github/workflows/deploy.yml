@@ -1,0 +1,24 @@
+name: Auto-Sync Quant Terminal Data
+
+on:
+  schedule:
+    - cron: '*/30 * * * *' # Har 30 minute me automatically run hoga
+  workflow_dispatch:
+
+jobs:
+  sync-data:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v3
+
+      - name: Run Data Update Script
+        run: |
+          python update_market_data.py # Aapki python script jo json/csv generate karti hai
+
+      - name: Commit and Push Changes
+        uses: stefanzweifel/git-auto-commit-action@v4
+        with:
+          commit_message: "auto: update live GEX corridors and macro metrics"
+          branch: main
+          
