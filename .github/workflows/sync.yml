@@ -1,0 +1,39 @@
+name: Auto-Sync Quant Terminal & Market Data
+
+on:
+  schedule:
+    # Har 30 minutes me automated sync run karega
+    - cron: '*/30 * * * *'
+  workflow_dispatch: # Aap ise GitHub Actions tab se manual bhi trigger kar sakte hain
+
+jobs:
+  update-terminal:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v3
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.10'
+
+      - name: Install Dependencies (if any)
+        run: |
+          python -m pip install --upgrade pip
+          # Agar aapko pandas ya requests ki zaroorat ho toh yahan add karein:
+          # pip install requests pandas
+
+      - name: Run GEX & Macro Data Generator Script
+        run: |
+          # Yahan aapki wo python script chalegi jo gex_levels.json aur lse_macro.csv generate karti hai
+          python generate_data.py
+
+      - name: Commit and Push Updated Data & UI
+        uses: stefanzweifel/git-auto-commit-action@v4
+        with:
+          commit_message: "auto: sync live GEX corridors and macro telemetry metrics [skip ci]"
+          branch: main
+          commit_options: '--no-verify'
+          
