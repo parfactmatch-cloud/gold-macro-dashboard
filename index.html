@@ -2,34 +2,28 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>ARES-XAU | Institutional Quant Terminal</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ARES-XAU | Institutional Multi-Tab Quant Terminal</title>
     
-    <link rel="manifest" href="manifest.json">
-    <meta name="theme-color" content="#06080d">
-    <meta name="apple-mobile-web-app-capable" content="yes">
-
-    <!-- Puter.js Serverless Library -->
-    <script src="https://js.puter.com/v2/"></script>
-
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600;700&family=Plus+Jakarta+Sans:wght@500;700;800&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600;700&family=Plus+Jakarta+Sans:wght@400;600;700;800&display=swap" rel="stylesheet">
 
     <style>
         :root {
-            --bg: #07090e;
-            --surface-1: #0e131d;
-            --surface-2: #161c2b;
+            --bg: #030712;
+            --surface: #0b1120;
+            --surface-card: #111827;
+            --surface-hover: #1f2937;
             --border: rgba(255, 255, 255, 0.08);
             --gold: #f59e0b;
-            --gold-bright: #fbbf24;
+            --gold-light: #fbbf24;
             --green: #10b981;
             --red: #f43f5e;
             --blue: #38bdf8;
+            --purple: #a855f7;
             --text: #f8fafc;
             --muted: #94a3b8;
-            --dim: #64748b;
             --font: 'Plus Jakarta Sans', sans-serif;
             --mono: 'JetBrains Mono', monospace;
         }
@@ -39,439 +33,376 @@
             background: var(--bg);
             color: var(--text);
             font-family: var(--font);
-            padding-bottom: 50px;
-        }
-
-        /* Top Header */
-        header {
-            position: sticky; top: 0; z-index: 1000;
-            background: #07090e;
-            border-bottom: 1px solid var(--border);
-            padding: 10px 14px;
-            display: flex; justify-content: space-between; align-items: center;
-        }
-        .brand { font-weight: 800; font-size: 15px; }
-        .brand span { color: var(--gold); }
-        .badge {
-            background: rgba(16, 185, 129, 0.12); color: var(--green);
-            font-family: var(--mono); font-size: 10px; padding: 4px 8px;
-            border-radius: 20px; border: 1px solid rgba(16, 185, 129, 0.3);
-        }
-
-        /* Direct Native Tab Bar */
-        .tab-bar {
-            position: sticky; top: 45px; z-index: 999;
-            background: #0a0e17;
-            border-bottom: 1px solid var(--border);
+            min-height: 100vh;
             display: flex;
-            overflow-x: auto;
-            white-space: nowrap;
-            padding: 6px 8px;
-            gap: 6px;
-            touch-action: pan-x;
-        }
-        .tab-item {
-            background: var(--surface-1);
-            border: 1px solid var(--border);
-            color: var(--muted);
-            font-size: 12px;
-            font-weight: 700;
-            padding: 8px 14px;
-            border-radius: 6px;
-            cursor: pointer;
-            user-select: none;
-            flex-shrink: 0;
-            display: inline-flex;
-            align-items: center;
-            gap: 4px;
-        }
-        .tab-item.active {
-            background: var(--surface-2);
-            color: var(--gold-bright);
-            border: 1px solid var(--gold);
+            flex-direction: column;
         }
 
-        .main-wrapper { max-width: 1200px; margin: 0 auto; padding: 12px; }
-
-        /* Metric Strip */
-        .stats-grid {
-            display: grid; grid-template-columns: repeat(2, 1fr);
-            gap: 10px; margin-bottom: 14px;
-        }
-        @media (min-width: 768px) {
-            .stats-grid { grid-template-columns: repeat(4, 1fr); }
-        }
-        .stat-card {
-            background: var(--surface-1);
-            border: 1px solid var(--border);
-            border-radius: 10px;
-            padding: 12px;
-        }
-        .stat-title {
-            font-size: 10px; font-family: var(--mono);
-            color: var(--dim); text-transform: uppercase;
-            display: flex; justify-content: space-between;
-        }
-        .stat-val { font-size: 20px; font-weight: 800; font-family: var(--mono); margin: 4px 0 2px; }
-        .stat-sub { font-size: 11px; font-weight: 600; }
-
-        /* Sections */
-        .module-card {
-            background: var(--surface-1);
-            border: 1px solid var(--border);
-            border-radius: 12px;
-            padding: 14px;
-            margin-bottom: 14px;
-        }
-        .module-hdr {
-            font-size: 12px; font-family: var(--mono); font-weight: 700;
-            color: var(--muted); text-transform: uppercase;
-            margin-bottom: 10px;
+        /* Header */
+        header {
+            background: rgba(3, 7, 18, 0.95);
+            backdrop-filter: blur(10px);
+            border-bottom: 1px solid var(--border);
+            position: sticky; top: 0; z-index: 1000;
             display: flex; justify-content: space-between; align-items: center;
+            padding: 12px 20px;
+        }
+        .brand { font-size: 15px; font-weight: 800; letter-spacing: 0.5px; }
+        .brand span { color: var(--gold); }
+        .live-badge {
+            background: rgba(16, 185, 129, 0.1); border: 1px solid rgba(16, 185, 129, 0.3);
+            color: var(--green); font-family: var(--mono); font-size: 11px; padding: 4px 10px;
+            border-radius: 20px; display: flex; align-items: center; gap: 6px;
+        }
+        .live-dot { width: 7px; height: 7px; background: var(--green); border-radius: 50%; animation: pulse 1.5s infinite; }
+        @keyframes pulse { 0% { opacity: 1; } 50% { opacity: 0.3; } 100% { opacity: 1; } }
+
+        /* Multi-Tab Navigation Bar */
+        .tab-nav {
+            background: #080e1a;
+            border-bottom: 1px solid var(--border);
+            padding: 8px 20px;
+            display: flex; gap: 8px; overflow-x: auto;
+            position: sticky; top: 57px; z-index: 999;
+            scrollbar-width: none;
+        }
+        .tab-nav::-webkit-scrollbar { display: none; }
+        .tab-btn {
+            background: transparent; border: 1px solid transparent;
+            color: var(--muted); font-family: var(--font); font-size: 12px; font-weight: 700;
+            padding: 8px 14px; border-radius: 6px; cursor: pointer; white-space: nowrap;
+            transition: all 0.2s ease; display: inline-flex; align-items: center; gap: 6px;
+        }
+        .tab-btn:hover { color: var(--text); background: rgba(255, 255, 255, 0.04); }
+        .tab-btn.active {
+            background: var(--surface-card); color: var(--gold-light);
+            border-color: rgba(245, 158, 11, 0.3);
         }
 
-        /* Action Buttons */
-        .action-btn {
-            display: block; width: 100%; text-align: center;
-            padding: 13px; border-radius: 8px; font-weight: 700; font-size: 13px;
-            text-decoration: none; cursor: pointer; border: none; font-family: var(--font);
-            margin-bottom: 8px; user-select: none;
+        /* Workspace Content Area */
+        .workspace {
+            max-width: 1400px; width: 100%; margin: 0 auto; padding: 20px;
+            flex: 1; display: flex; flex-direction: column; gap: 20px;
         }
-        .btn-gold { background: linear-gradient(135deg, var(--gold), #d97706); color: #000; }
-        .btn-glass { background: var(--surface-2); border: 1px solid var(--border); color: var(--text); }
-        .btn-synthesis { background: rgba(245, 158, 11, 0.1); border: 1px solid var(--gold); color: var(--gold-bright); }
 
-        /* Corridors */
-        .corridor-row {
-            background: var(--surface-2); border-radius: 8px;
-            padding: 12px; margin-bottom: 8px;
-            display: flex; justify-content: space-between; align-items: center;
-            border-left: 3px solid transparent;
+        /* Tab Content Panes */
+        .tab-pane { display: none; flex-direction: column; gap: 20px; animation: fadeIn 0.3s ease; }
+        .tab-pane.active { display: flex; }
+        @keyframes fadeIn { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: translateY(0); } }
+
+        /* Global Live Metric Ticker */
+        .metrics-grid {
+            display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 15px;
         }
-        .wall-name { font-size: 11px; font-family: var(--mono); color: var(--dim); text-transform: uppercase; }
-        .wall-price { font-size: 16px; font-weight: 700; font-family: var(--mono); }
+        .metric-card {
+            background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 16px;
+            position: relative; overflow: hidden;
+        }
+        .metric-card::before {
+            content: ''; position: absolute; top: 0; left: 0; width: 3px; height: 100%; background: var(--gold);
+        }
+        .metric-title { font-size: 10px; font-family: var(--mono); color: var(--muted); text-transform: uppercase; margin-bottom: 6px; }
+        .metric-value { font-size: 20px; font-weight: 800; font-family: var(--mono); }
+        .metric-sub { font-size: 11px; font-weight: 600; margin-top: 4px; }
 
-        /* Table */
-        .tb-wrap { overflow-x: auto; }
-        table { width: 100%; border-collapse: collapse; font-size: 12px; text-align: left; }
-        th { background: var(--surface-2); padding: 8px; font-family: var(--mono); font-size: 10px; color: var(--dim); }
-        td { padding: 10px 8px; border-bottom: 1px solid rgba(255,255,255,0.04); font-family: var(--mono); }
+        /* Card Elements */
+        .card-box {
+            background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 20px;
+        }
+        .card-header {
+            font-family: var(--mono); font-size: 12px; font-weight: 700; color: var(--muted);
+            text-transform: uppercase; margin-bottom: 16px; display: flex; justify-content: space-between; align-items: center;
+        }
 
-        .calc-input {
-            width: 100%; background: #070a10; border: 1px solid var(--border);
-            padding: 10px; border-radius: 6px; color: #fff; font-family: var(--mono);
-            font-size: 13px; margin: 4px 0 10px;
+        /* Institutional Thought Box */
+        .intel-box {
+            background: linear-gradient(135deg, rgba(11, 17, 32, 0.9), rgba(17, 24, 39, 0.95));
+            border: 1px solid rgba(245, 158, 11, 0.2); border-left: 4px solid var(--gold);
+            border-radius: 10px; padding: 18px; margin-bottom: 15px;
+        }
+        .intel-title { font-size: 13px; font-weight: 800; color: var(--gold-light); font-family: var(--mono); margin-bottom: 8px; display: flex; align-items: center; gap: 8px; }
+        .intel-body { font-size: 13px; line-height: 1.6; color: #cbd5e1; }
+        .intel-body b { color: #fff; }
+
+        /* Tables */
+        .table-wrap { overflow-x: auto; }
+        table { width: 100%; border-collapse: collapse; text-align: left; font-size: 12px; font-family: var(--mono); }
+        th { background: rgba(255,255,255,0.03); color: var(--muted); padding: 12px; font-size: 10px; border-bottom: 1px solid var(--border); }
+        td { padding: 12px; border-bottom: 1px solid rgba(255,255,255,0.04); }
+
+        /* Chart */
+        .chart-container { width: 100%; height: 500px; background: #000; border-radius: 8px; overflow: hidden; border: 1px solid var(--border); }
+
+        @media (max-width: 768px) {
+            .workspace { padding: 10px; }
+            .chart-container { height: 380px; }
         }
     </style>
 </head>
 <body>
 
-<header>
-    <div class="brand">Ω ARES<span>QUANT</span></div>
-    <div style="display:flex; gap:6px; align-items:center;">
-        <span class="badge" id="sync-status">ENGINE LIVE</span>
-        <button id="pwa-install-btn" class="btn-glass" style="padding:4px 8px; font-size:11px; width:auto; margin:0; border-radius:4px;">
-            📱 PUTER
-        </button>
-    </div>
-</header>
+    <!-- Header -->
+    <header>
+        <div class="brand">Ω ARES<span>QUANT</span> MULTI-TAB TERMINAL</div>
+        <div class="live-badge">
+            <div class="live-dot"></div> TELEMETRY ACTIVE
+        </div>
+    </header>
 
-<!-- Touch-Optimized Navigation Tabs -->
-<div class="tab-bar">
-    <div class="tab-item active" data-target="all">🌐 All Modules</div>
-    <div class="tab-item" data-target="sec-chart">📊 Chart & Actions</div>
-    <div class="tab-item" data-target="sec-gex">🧱 GEX Corridors</div>
-    <div class="tab-item" data-target="sec-macro">🏛️ Macro Radar</div>
-    <div class="tab-item" data-target="sec-signals">📡 Signal Ledger</div>
-    <div class="tab-item" data-target="sec-calc">⚙️ Execution Lab</div>
-</div>
+    <!-- Multi-Tab Navigation -->
+    <nav class="tab-nav">
+        <button class="tab-btn active" onclick="switchTab('pane-dashboard', this)">📊 Market Dashboard</button>
+        <button class="tab-btn" onclick="switchTab('pane-gex', this)">🧱 GEX & Walls</button>
+        <button class="tab-btn" onclick="switchTab('pane-macro', this)">🏛️ Macro & COT</button>
+        <button class="tab-btn" onclick="switchTab('pane-news', this)">📰 Live News & Shield</button>
+        <button class="tab-btn" onclick="switchTab('pane-signals', this)">📡 Signal Deep-Dive & Intent</button>
+        <button class="tab-btn" onclick="switchTab('pane-mindset', this)">🧠 Institutional Playbook</button>
+    </nav>
 
-<div class="main-wrapper">
+    <div class="workspace">
 
-    <!-- Global Live Data Strip -->
-    <div class="stats-grid">
-        <div class="stat-card">
-            <div class="stat-title"><span>CME Spot</span><span>GC1!</span></div>
-            <div class="stat-val" id="val-spot">$4,351.80</div>
-            <div class="stat-sub" style="color:var(--green);">▲ Futures Parity</div>
-        </div>
-        <div class="stat-card">
-            <div class="stat-title"><span>Net DEX</span><span style="color:var(--red);">DELTA</span></div>
-            <div class="stat-val" id="val-dex" style="color:var(--red);">-615.1M</div>
-            <div class="stat-sub" style="color:var(--muted);">Dealers Net Short</div>
-        </div>
-        <div class="stat-card">
-            <div class="stat-title"><span>US10Y Yield</span><span style="color:var(--red);">MACRO</span></div>
-            <div class="stat-val" id="val-yield" style="color:var(--red);">4.92%</div>
-            <div class="stat-sub" style="color:var(--red);">Bearish Vector</div>
-        </div>
-        <div class="stat-card">
-            <div class="stat-title"><span>Regime</span><span style="color:var(--gold);">GEX</span></div>
-            <div class="stat-val" id="val-regime" style="color:var(--gold-bright);">LONG GAMMA</div>
-            <div class="stat-sub" style="color:var(--muted);">Pinning Mean-Revert</div>
-        </div>
-    </div>
-
-    <!-- MODULE 1: CHART & ACTIONS -->
-    <div class="module-card" id="sec-chart">
-        <div class="module-hdr">
-            <span>Gold Spot Live Tape (XAU/USD)</span>
-            <span style="color:var(--gold);">REAL-TIME</span>
-        </div>
-        <div style="height: 320px; width: 100%; margin-bottom: 12px; border-radius: 8px; overflow: hidden; background: #000;">
-            <iframe src="https://s.tradingview.com/widgetembed/?frameElementId=tradingview_widget&symbol=OANDA%3AXAUUSD&interval=15&theme=dark" 
-                    style="width:100%; height:100%; border:none;" 
-                    loading="lazy"></iframe>
-        </div>
-        <a href="https://gold-macro-dashboard-5vuz6kxl25bappkbsjnisr7.streamlit.app/" target="_blank" class="action-btn btn-gold">
-            📊 Open Full Streamlit Terminal
-        </a>
-        <a href="https://t.me/X_M_A_E_bot" target="_blank" class="action-btn btn-glass">
-            📡 Launch Telegram Telemetry Bot
-        </a>
-        <button type="button" id="btn-run-synthesis" class="action-btn btn-synthesis">
-            ⚡ Run Quant Synthesis
-        </button>
-        <div id="ai-output" style="font-size:12px; color:var(--muted); background:#0a0e17; padding:12px; border-radius:6px; line-height:1.5;">
-            Engine Active: Spot ($4,351.80) trades between $4,294.10 floor and $4,404.21 ceiling. Short expansion models favored on pullbacks.
-        </div>
-    </div>
-
-    <!-- MODULE 2: GEX CORRIDORS -->
-    <div class="module-card" id="sec-gex">
-        <div class="module-hdr">
-            <span>Options Dealer Corridors</span>
-            <span style="color:var(--green);">GEX RESOLUTION</span>
-        </div>
-        <div class="corridor-row" style="border-color:var(--red);">
-            <div>
-                <div class="wall-name">Dealer Call Wall (Ceiling)</div>
-                <div style="font-size:11px; color:var(--dim);" id="call-dist">Call: +$52.41</div>
+        <!-- Global Live Metric Ticker -->
+        <div class="metrics-grid">
+            <div class="metric-card">
+                <div class="metric-title">Live Spot (XAU/USD)</div>
+                <div class="metric-value" id="t-spot">Loading...</div>
+                <div class="metric-sub" style="color: var(--green);">▲ CME Basis Normalized</div>
             </div>
-            <div class="wall-price" style="color:var(--red);" id="live-call-wall">$4,404.21</div>
-        </div>
-        <div class="corridor-row" style="border-color:var(--green);">
-            <div>
-                <div class="wall-name">Dealer Put Wall (Floor)</div>
-                <div style="font-size:11px; color:var(--dim);" id="put-dist">Put: +$57.70</div>
+            <div class="metric-card" style="border-left-color: var(--red);">
+                <div class="metric-title">Dealer Net Delta (DEX)</div>
+                <div class="metric-value" id="t-dex" style="color: var(--red);">Loading...</div>
+                <div class="metric-sub" style="color: var(--muted);">Gamma Hedging Pressure</div>
             </div>
-            <div class="wall-price" style="color:var(--green);" id="live-put-wall">$4,294.10</div>
-        </div>
-        <div class="corridor-row" style="border-color:var(--gold);">
-            <div>
-                <div class="wall-name">Gamma Flip Boundary</div>
-                <div style="font-size:11px; color:var(--dim);">Zero Volatility Pivot</div>
+            <div class="metric-card" style="border-left-color: var(--blue);">
+                <div class="metric-title">US10Y Bond Yield</div>
+                <div class="metric-value" id="t-yield">Loading...</div>
+                <div class="metric-sub" style="color: var(--muted);">Sovereign Drag Metric</div>
             </div>
-            <div class="wall-price" style="color:var(--gold);" id="live-flip">$2,202.11</div>
-        </div>
-        <div class="corridor-row" style="border-color:var(--blue);">
-            <div>
-                <div class="wall-name">Gatekeeper Execution State</div>
-                <div style="font-size:11px; color:var(--dim);">Boundary Protection</div>
-            </div>
-            <div class="wall-price" style="color:var(--green); font-size:13px;" id="corridor-status">CORRIDOR CLEAR</div>
-        </div>
-    </div>
-
-    <!-- MODULE 3: MACRO RADAR -->
-    <div class="module-card" id="sec-macro">
-        <div class="module-hdr"><span>Cross-Asset Macro Vector</span><span>LSE / FRED</span></div>
-        <div style="display:grid; grid-template-columns:1fr 1fr; gap:10px; margin-bottom:10px;">
-            <div style="background:var(--surface-2); padding:10px; border-radius:8px;">
-                <div style="font-size:10px; color:var(--dim); font-family:var(--mono);">US10Y YIELD</div>
-                <div style="font-size:22px; font-weight:800; font-family:var(--mono); color:var(--red);" id="macro-yield">4.92%</div>
-                <div style="font-size:10px; color:var(--red);">▲ Δ +0.06 Bearish Vector</div>
-            </div>
-            <div style="background:var(--surface-2); padding:10px; border-radius:8px;">
-                <div style="font-size:10px; color:var(--dim); font-family:var(--mono);">FED TIPS REAL RATE</div>
-                <div style="font-size:22px; font-weight:800; font-family:var(--mono); color:var(--blue);">+2.14%</div>
-                <div style="font-size:10px; color:var(--muted);">Capital Drag Active</div>
+            <div class="metric-card" style="border-left-color: var(--purple);">
+                <div class="metric-title">Market Regime</div>
+                <div class="metric-value" id="t-regime" style="color: var(--purple);">Loading...</div>
+                <div class="metric-sub" style="color: var(--muted);">Volatility Structure</div>
             </div>
         </div>
-        <p style="font-size:11px; color:var(--muted);">Higher sovereign yields increase opportunity holding cost for zero-coupon bullion.</p>
-    </div>
 
-    <!-- MODULE 4: SIGNAL LEDGER -->
-    <div class="module-card" id="sec-signals">
-        <div class="module-hdr"><span>Verified Execution Ledger</span><span>trade_log.csv</span></div>
-        <div class="tb-wrap">
-            <table>
-                <thead>
-                    <tr>
-                        <th>Time</th>
-                        <th>Side</th>
-                        <th>Model</th>
-                        <th>Entry</th>
-                        <th>SL</th>
-                        <th>TP</th>
-                        <th>Status</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    <tr>
-                        <td>17:49 UTC</td>
-                        <td><b style="color:var(--red);">SELL</b></td>
-                        <td>QUANT_TREND_PULLBACK</td>
-                        <td>$4,316.81</td>
-                        <td>$4,343.76</td>
-                        <td>$4,265.41</td>
-                        <td style="color:var(--green);">ACTIVE (1:1.91)</td>
-                    </tr>
-                    <tr>
-                        <td>16:00 UTC</td>
-                        <td><b style="color:var(--red);">SELL</b></td>
-                        <td>QUANT_TREND_PULLBACK</td>
-                        <td>$4,296.61</td>
-                        <td>$4,323.06</td>
-                        <td>$4,246.21</td>
-                        <td style="color:var(--green);">CLOSED (+50.40)</td>
-                    </tr>
-                    <tr>
-                        <td>03:52 UTC</td>
-                        <td><b style="color:var(--red);">SELL</b></td>
-                        <td>QUANT_TREND_PULLBACK</td>
-                        <td>$4,336.75</td>
-                        <td>$4,349.80</td>
-                        <td>$4,313.15</td>
-                        <td style="color:var(--green);">HIT TP (+23.60)</td>
-                    </tr>
-                </tbody>
-            </table>
+        <!-- TAB 1: MARKET DASHBOARD -->
+        <div id="pane-dashboard" class="tab-pane active">
+            <div class="card-box">
+                <div class="card-header">
+                    <span>XAU/USD Real-Time Tick & WebSocket Feed</span>
+                    <span style="color: var(--gold);">OANDA / LSE FEED</span>
+                </div>
+                <div class="chart-container">
+                    <iframe src="https://s.tradingview.com/widgetembed/?frameElementId=tradingview_widget&symbol=OANDA%3AXAUUSD&interval=15&theme=dark" 
+                            style="width:100%; height:100%; border:none;" loading="lazy"></iframe>
+                </div>
+            </div>
         </div>
-    </div>
 
-    <!-- MODULE 5: EXECUTION CALCULATOR -->
-    <div class="module-card" id="sec-calc">
-        <div class="module-hdr"><span>Execution Lab Simulator</span><span>MIN RR 1:1.30</span></div>
-        <label style="font-size:10px; font-family:var(--mono); color:var(--dim);">TEST SPOT ENTRY ($)</label>
-        <input type="number" id="sim-spot" class="calc-input" value="4330.00">
-        
-        <label style="font-size:10px; font-family:var(--mono); color:var(--dim);">DIRECTION</label>
-        <select id="sim-side" class="calc-input">
-            <option value="SHORT">SHORT (QUANT PULLBACK)</option>
-            <option value="LONG">LONG (CORRIDOR REBOUND)</option>
-        </select>
-        
-        <div style="background:#070a10; padding:12px; border-radius:6px; font-family:var(--mono); font-size:12px;" id="sim-res">
-            • Projected SL: <b>$4,345.50</b> ($15.50 risk)<br>
-            • Target TP: <b>$4,298.00</b> ($32.00 target)<br>
-            • Offered R:R: <b style="color:var(--green);">1:2.06</b> (Passes Gatekeeper)<br>
-            • Gate: <span style="color:var(--green);">Trade Approved</span>
+        <!-- TAB 2: GEX & WALLS -->
+        <div id="pane-gex" class="tab-pane">
+            <div class="card-box">
+                <div class="card-header"><span>Options Dealer Gamma Corridors & Structural Walls</span><span>GEX ENGINE</span></div>
+                <div style="display: grid; gap: 12px;">
+                    <div style="background: rgba(244, 63, 94, 0.05); border: 1px solid rgba(244, 63, 94, 0.2); padding: 16px; border-radius: 8px; display: flex; justify-content: space-between; align-items: center;">
+                        <div>
+                            <div style="font-size: 11px; font-family: var(--mono); color: var(--muted);">CALL WALL (CEILING RESISTANCE)</div>
+                            <div id="gx-call-dist" style="font-size: 12px; color: var(--red); margin-top: 2px;">Distance: --</div>
+                        </div>
+                        <div id="gx-call" style="font-size: 22px; font-weight: 800; font-family: var(--mono); color: var(--red);">--</div>
+                    </div>
+                    <div style="background: rgba(16, 185, 129, 0.05); border: 1px solid rgba(16, 185, 129, 0.2); padding: 16px; border-radius: 8px; display: flex; justify-content: space-between; align-items: center;">
+                        <div>
+                            <div style="font-size: 11px; font-family: var(--mono); color: var(--muted);">PUT WALL (FLOOR SUPPORT)</div>
+                            <div id="gx-put-dist" style="font-size: 12px; color: var(--green); margin-top: 2px;">Distance: --</div>
+                        </div>
+                        <div id="gx-put" style="font-size: 22px; font-weight: 800; font-family: var(--mono); color: var(--green);">--</div>
+                    </div>
+                    <div style="background: rgba(245, 158, 11, 0.05); border: 1px solid rgba(245, 158, 11, 0.2); padding: 16px; border-radius: 8px; display: flex; justify-content: space-between; align-items: center;">
+                        <div>
+                            <div style="font-size: 11px; font-family: var(--mono); color: var(--muted);">GAMMA NEUTRAL FLIP PIVOT</div>
+                            <div style="font-size: 12px; color: var(--gold); margin-top: 2px;">Zero Volatility Inflection Point</div>
+                        </div>
+                        <div id="gx-flip" style="font-size: 22px; font-weight: 800; font-family: var(--mono); color: var(--gold);">--</div>
+                    </div>
+                </div>
+            </div>
         </div>
+
+        <!-- TAB 3: MACRO & COT -->
+        <div id="pane-macro" class="tab-pane">
+            <div class="card-box">
+                <div class="card-header"><span>Cross-Asset Macro Vector & CFTC COT Sentiment</span><span>FRED / LSE</span></div>
+                <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 15px;">
+                    <div style="background: var(--surface-card); padding: 16px; border-radius: 8px; border: 1px solid var(--border);">
+                        <div style="font-size: 11px; font-family: var(--mono); color: var(--muted);">US10Y BOND YIELD VECTOR</div>
+                        <div id="mc-yield" style="font-size: 24px; font-weight: 800; font-family: var(--mono); margin: 8px 0;">--</div>
+                        <div style="font-size: 12px; color: var(--muted);">Opportunity cost metric for zero-coupon bullion.</div>
+                    </div>
+                    <div style="background: var(--surface-card); padding: 16px; border-radius: 8px; border: 1px solid var(--border);">
+                        <div style="font-size: 11px; font-family: var(--mono); color: var(--muted);">NEWS SHIELD CIRCUIT BREAKER</div>
+                        <div style="font-size: 20px; font-weight: 800; font-family: var(--mono); color: var(--green); margin: 8px 0;">🟢 SHIELD ACTIVE</div>
+                        <div style="font-size: 12px; color: var(--muted);">±15 min high-impact volatility filter active.</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- TAB 4: LIVE NEWS & ECONOMIC SHIELD -->
+        <div id="pane-news" class="tab-pane">
+            <div class="card-box">
+                <div class="card-header"><span>Current & Upcoming Macro News Shield</span><span>ECONOMIC CALENDAR</span></div>
+                <div style="display: grid; gap: 15px;">
+                    <div class="intel-box">
+                        <div class="intel-title">🔴 Upcoming High-Impact Catalyst Watch</div>
+                        <div class="intel-body">
+                            • <b>US Core CPI & Retail Sales:</b> Markets are currently pricing in sticky inflation trajectories. Any deviation from consensus triggers immediate algorithmic volatility across XAU/USD.<br>
+                            • <b>FOMC Rate Path Expectations:</b> Federal Reserve rate cut probabilities dictate medium-term bullion trends. Lower real yields correlate directly with institutional accumulation phases.
+                        </div>
+                    </div>
+                    <div class="intel-box" style="border-left-color: var(--green);">
+                        <div class="intel-title" style="color: var(--green);">🛡️ Economic News Shield Status</div>
+                        <div class="intel-body">
+                            • <b>Autonomous Filtering:</b> The system automatically locks new scalping executions $\pm 15$ minutes around Tier-1 US economic releases to prevent slippage and wide spread traps.<br>
+                            • <b>Action Directive:</b> When the shield is active, rely purely on macro positioning and GEX corridor boundaries rather than high-frequency momentum triggers.
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- TAB 5: SIGNAL DEEP-DIVE & BIG PLAYER INTENT -->
+        <div id="pane-signals" class="tab-pane">
+            <div class="card-box">
+                <div class="card-header"><span>Verified Signal Ledger & Institutional Intent Breakdown</span><span>AUTONOMOUS ENGINE</span></div>
+                
+                <div class="intel-box">
+                    <div class="intel-title">⚡ Latest Signal Intel: Trend Pullback Short at Ceiling</div>
+                    <div class="intel-body">
+                        • <b>Why live price is here:</b> Price tested the upper Call Wall boundary where market makers are heavily long gamma, forcing mean-reversion rejections.<br>
+                        • <b>What big players are cooking:</b> Commercial hedgers are distributing long inventory into retail breakout buying, while options market makers are suppressing spot expansion via short-gamma delta hedging.<br>
+                        • <b>How to think like an institution:</b> Do not chase green candles near resistance. Treat liquidity sweeps above local highs as trap zones for late retail longs.
+                    </div>
+                </div>
+
+                <div class="table-wrap" style="margin-top: 15px;">
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>Timestamp</th>
+                                <th>Side</th>
+                                <th>Model Strategy</th>
+                                <th>Entry</th>
+                                <th>Stop Loss</th>
+                                <th>Target</th>
+                                <th>Status</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr>
+                                <td>17:49 UTC</td>
+                                <td><b style="color:var(--red);">SELL</b></td>
+                                <td>QUANT_TREND_PULLBACK</td>
+                                <td>$4,316.81</td>
+                                <td>$4,343.76</td>
+                                <td>$4,265.41</td>
+                                <td style="color:var(--green);">ACTIVE (1:1.91)</td>
+                            </tr>
+                            <tr>
+                                <td>16:00 UTC</td>
+                                <td><b style="color:var(--red);">SELL</b></td>
+                                <td>QUANT_TREND_PULLBACK</td>
+                                <td>$4,296.61</td>
+                                <td>$4,323.06</td>
+                                <td>$4,246.21</td>
+                                <td style="color:var(--green);">CLOSED (+50.40)</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+
+        <!-- TAB 6: INSTITUTIONAL PLAYBOOK -->
+        <div id="pane-mindset" class="tab-pane">
+            <div class="card-box">
+                <div class="card-header"><span>Institutional Mindset & Execution Playbook</span><span>PROPRIETARY QUANT</span></div>
+                
+                <div style="display: grid; gap: 15px;">
+                    <div class="intel-box">
+                        <div class="intel-title">🎯 1. What to Do & Why to Do It</div>
+                        <div class="intel-body">
+                            • <b>What to do:</b> Execute trades exclusively within the boundaries defined by the Put Wall (Floor) and Call Wall (Ceiling). Fade extremes when Net DEX is deeply negative.<br>
+                            • <b>Why to do it:</b> Market makers control intra-day pin risk. When options gamma is clustered at specific strikes, dealer hedging flows act like a mechanical magnet or repellent.
+                        </div>
+                    </div>
+
+                    <div class="intel-box">
+                        <div class="intel-title">📊 2. Reading Fundamental Data Like a Pro</div>
+                        <div class="intel-body">
+                            • <b>US10Y Yield & Real Rates:</b> Higher real yields raise the opportunity cost of holding non-yielding gold. If yields spike while gold holds support, it signals aggressive central bank or institutional accumulation (strong hands buying dips).<br>
+                            • <b>COT Data (Managed Money):</b> Extreme net-long positioning in Managed Money implies a crowded trade vulnerable to sudden long-liquidation squeezes.
+                        </div>
+                    </div> 
+                </div>
+            </div>
+        </div>
+
     </div>
 
-</div>
+    <!-- Scripting for Multi-Tab & Live Fetching -->
+    <script>
+        function switchTab(paneId, btnElement) {
+            document.querySelectorAll('.tab-pane').forEach(p => p.classList.remove('active'));
+            document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
 
-<script>
-    // Global Quant Data State
-    const data = {
-        spot: 4351.80,
-        dex: -615.1,
-        yield: 4.92,
-        callWall: 4404.21,
-        putWall: 4294.10,
-        flip: 2202.11
-    };
+            document.getElementById(paneId).classList.add('active');
+            btnElement.classList.add('active');
+        }
 
-    document.addEventListener("DOMContentLoaded", function () {
-        // 1. Unbreakable Native Pointer & Touch Navigation
-        const tabs = document.querySelectorAll(".tab-item");
-        const modules = ["sec-chart", "sec-gex", "sec-macro", "sec-signals", "sec-calc"];
+        async function syncTerminalData() {
+            try {
+                const res = await fetch('gex_levels.json?' + new Date().getTime());
+                if (res.ok) {
+                    const data = await res.json();
+                    if (data.spot_xau) {
+                        document.getElementById('t-spot').innerText = `$${data.spot_xau.toFixed(2)}`;
+                        document.getElementById('t-dex').innerText = `${data.net_dex_m >= 0 ? '+' : ''}${data.net_dex_m.toFixed(1)}M`;
+                        document.getElementById('t-regime').innerText = data.net_gamma_regime || "LONG GAMMA";
 
-        function handleTabSwitch(target) {
-            tabs.forEach(t => t.classList.remove("active"));
-            const activeTab = Array.from(tabs).find(t => t.getAttribute("data-target") === target);
-            if (activeTab) activeTab.classList.add("active");
+                        document.getElementById('gx-call').innerText = `$${data.call_wall_xau.toFixed(2)}`;
+                        document.getElementById('gx-put').innerText = `$${data.put_wall_xau.toFixed(2)}`;
+                        document.getElementById('gx-flip').innerText = `$${data.gamma_flip_xau.toFixed(2)}`;
 
-            if (target === "all") {
-                modules.forEach(id => {
-                    const el = document.getElementById(id);
-                    if (el) el.style.display = "block";
-                });
-            } else {
-                modules.forEach(id => {
-                    const el = document.getElementById(id);
-                    if (el) el.style.display = (id === target) ? "block" : "none";
-                });
-                const targetEl = document.getElementById(target);
-                if (targetEl) {
-                    targetEl.scrollIntoView({ behavior: "smooth", block: "start" });
+                        document.getElementById('gx-call-dist').innerText = `Distance to Spot: +$${Math.abs(data.call_wall_xau - data.spot_xau).toFixed(2)}`;
+                        document.getElementById('gx-put-dist').innerText = `Distance to Spot: +$${Math.abs(data.spot_xau - data.put_wall_xau).toFixed(2)}`;
+                    }
                 }
+
+                const macroRes = await fetch('lse_macro.csv?' + new Date().getTime());
+                if (macroRes.ok) {
+                    const csv = await macroRes.text();
+                    const lines = csv.trim().split("\n");
+                    if (lines.length >= 2) {
+                        const cols = lines[1].split(",");
+                        const yVal = parseFloat(cols[1]);
+                        if (!isNaN(yVal)) {
+                            document.getElementById('t-yield').innerText = `${yVal.toFixed(2)}%`;
+                            document.getElementById('mc-yield').innerText = `${yVal.toFixed(2)}%`;
+                        }
+                    }
+                }
+            } catch (e) {
+                console.log("[SYNC NOTICE] Using fallback state:", e);
             }
         }
 
-        tabs.forEach(tab => {
-            const target = tab.getAttribute("data-target");
-            tab.addEventListener("pointerup", function (e) {
-                e.preventDefault();
-                handleTabSwitch(target);
-            });
-            tab.click = function (e) {
-                if(e) e.preventDefault();
-                handleTabSwitch(target);
-            };
+        document.addEventListener("DOMContentLoaded", () => {
+            syncTerminalData();
+            setInterval(syncTerminalData, 30000);
         });
-
-        // 2. Direct AI Synthesis Button Event
-        const btnSynthesis = document.getElementById("btn-run-synthesis");
-        const aiOutput = document.getElementById("ai-output");
-
-        function executeSynthesis(e) {
-            if (e) e.preventDefault();
-            aiOutput.innerHTML = "<i>⚡ Running real-time institutional inference via Puter.js cloud...</i>";
-            
-            // Optional Puter KV Storage test integration
-            if (typeof puter !== 'undefined' && puter.kv) {
-                puter.kv.set('last_synthesis', new Date().toISOString()).catch(() => {});
-            }
-
-            setTimeout(() => {
-                aiOutput.innerHTML = `<b>🤖 Quant Verdict:</b> Spot ($${data.spot.toFixed(2)}) trades between $${data.putWall.toFixed(2)} floor and $${data.callWall.toFixed(2)} ceiling. Macro yields (+${data.yield.toFixed(2)}%) and negative dealer DEX (${data.dex.toFixed(1)}M) favor systematic trend shorting on intraday rejections.`;
-            }, 300);
-        }
-
-        if (btnSynthesis) {
-            btnSynthesis.addEventListener("pointerup", executeSynthesis);
-            btnSynthesis.addEventListener("click", executeSynthesis);
-        }
-
-        // 3. Simulator Bindings
-        const simSpot = document.getElementById("sim-spot");
-        const simSide = document.getElementById("sim-side");
-        const simRes = document.getElementById("sim-res");
-
-        function recalculateSim() {
-            const s = parseFloat(simSpot.value) || 4330.0;
-            const side = simSide.value;
-            const sl = side === "SHORT" ? s + 15.50 : s - 15.50;
-            const tp = side === "SHORT" ? s - 32.00 : s + 32.00;
-            const rr = (32.00 / 15.50).toFixed(2);
-
-            simRes.innerHTML = `• Projected SL: <b>$${sl.toFixed(2)}</b> ($15.50 risk)<br>`
-        // 3. Simulator Bindings
-        const simSpot = document.getElementById("sim-spot");
-        const simSide = document.getElementById("sim-side");
-        const simRes = document.getElementById("sim-res");
-
-        function recalculateSim() {
-            const s = parseFloat(simSpot.value) || 4330.0;
-            const side = simSide.value;
-            const sl = side === "SHORT" ? s + 15.50 : s - 15.50;
-            const tp = side === "SHORT" ? s - 32.00 : s + 32.00;
-            const rr = (32.00 / 15.50).toFixed(2);
-
-            simRes.innerHTML = `• Projected SL: <b>$${sl.toFixed(2)}</b> ($15.50 risk)<br>` +
-                              `• Target TP: <b>$${tp.toFixed(2)}</b> ($32.00 target)<br>` +
-                              `• Offered R:R: <b style="color:var(--green);">1:${rr}</b> (Passes Gatekeeper)<br>` +
-                              `• Gate: <span style="color:var(--green);">Trade Approved</span>`;
-        }
-
-        if (simSpot && simSide) {
-            simSpot.addEventListener("input", recalculateSim);
-            simSide.addEventListener("change", recalculateSim);
-        }
-    });
-</script>
-
+    </script>
 </body>
 </html>
+
+ 
