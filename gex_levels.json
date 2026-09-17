@@ -1,16 +1,12 @@
 {
-  "timestamp_utc": "2026-09-17 11:11:00 UTC",
-  "status": "HEALTHY",
-  "spot_xau": 4339.13,
-  "gld_close": 391.74,
-  "conv_ratio": 11.0766,
-  "call_wall_xau": 4984.45,
-  "put_wall_xau": 4153.71,
-  "gamma_flip_xau": 4342.01,
-  "net_dex_m": 1.47,
-  "net_gamma_regime": "LONG_GAMMA_MEAN_REVERT",
-  "gamma_blast_active": false,
-  "call_distance_telemetry": "Call: +$645.32",
-  "put_distance_telemetry": "Put: +$185.42",
-  "is_corridor_valid": true
+    "status": "SUCCESS",
+    "timestamp_utc": "2026-09-17 14:49:00 UTC",
+    "spot_xau": 4403.39990234375,
+    "call_wall_xau": 4417.65,
+    "put_wall_xau": 4377.9,
+    "gamma_flip_xau": 4399.6,
+    "net_dex_m": 271.5,
+    "net_gamma_regime": "LONG_GAMMA_MEAN_REVERSION",
+    "gamma_blast_active": false,
+    "conv_ratio": "0.88"
 }
