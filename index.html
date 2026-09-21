@@ -181,7 +181,7 @@
             <div class="metric-card">
                 <div class="metric-title">Live Spot (XAU/USD)</div>
                 <div class="metric-value" id="t-spot">Loading...</div>
-                <div class="metric-sub" style="color: var(--green);">▲ CME Basis Normalized</div>
+                <div class="metric-sub" style="color: var(--green);">▲ LSE Stream Synchronized</div>
             </div>
             <div class="metric-card" style="border-left-color: var(--red);">
                 <div class="metric-title">Dealer Net Delta (DEX)</div>
@@ -217,7 +217,7 @@
             <div class="card-box">
                 <div class="card-header">
                     <span>⚡ Institutional Execution & Order Flow Telemetry</span>
-                    <span style="color: var(--green);">● Live Stream Synchronized</span>
+                    <span style="color: var(--green);" id="stream-status-badge">● LSE WSS Live</span>
                 </div>
 
                 <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 15px;">
@@ -225,13 +225,13 @@
                     <div style="background: var(--bg); padding: 14px; border-radius: 8px; border: 1px solid var(--border);">
                         <div style="font-size: 10px; font-family: var(--mono); color: var(--muted); margin-bottom: 6px; font-weight: 700;">ORDER FLOW LIQUIDITY IMBALANCE</div>
                         <div style="display: flex; justify-content: space-between; font-size: 11px; font-family: var(--mono); margin-bottom: 4px; font-weight: 700;">
-                            <span style="color: var(--green);">Bids (Buyers): 58%</span>
-                            <span style="color: var(--red);">Asks (Sellers): 42%</span>
+                            <span id="bids-label" style="color: var(--green);">Bids (Buyers): 58%</span>
+                            <span id="asks-label" style="color: var(--red);">Asks (Sellers): 42%</span>
                         </div>
                         <div style="width: 100%; height: 6px; background: rgba(244,63,94,0.3); border-radius: 3px; overflow: hidden;"> 
-                            <div style="width: 58%; height: 100%; background: var(--green);"></div>
+                            <div id="bids-progress-bar" style="width: 58%; height: 100%; background: var(--green); transition: width 0.3s ease;"></div>
                         </div>
-                        <div style="font-size: 10px; color: var(--muted); margin-top: 6px;">Status: Mild institutional bid accumulation near Put Wall.</div>
+                        <div id="imbalance-status-text" style="font-size: 10px; color: var(--muted); margin-top: 6px;">Status: Mild institutional bid accumulation near Put Wall.</div>
                     </div>
 
                     <div style="background: var(--bg); padding: 14px; border-radius: 8px; border: 1px solid var(--border);">
@@ -248,7 +248,7 @@
                     <div style="background: var(--bg); padding: 14px; border-radius: 8px; border: 1px solid var(--border);">
                         <div style="font-size: 10px; font-family: var(--mono); color: var(--muted); margin-bottom: 6px; font-weight: 700;">AI SENTINEL REAL-TIME PULSE</div>
                         <div id="ai-live-log" style="font-size: 11px; font-family: var(--mono); color: var(--text); line-height: 1.4;">
-                            <i>[09:44 UTC]</i> Scanning GEX corridors... Spot inside boundaries. Ready for micro-lot pullback triggers.
+                            <i>[09:44 UTC]</i> Scanning GEX corridors via LSE stream... Ready for micro-lot pullback triggers.
                         </div>
                     </div>
 
@@ -331,26 +331,20 @@
                 <div class="card-header"><span>WSS Data Feed & Smart Money Block Flow</span><span>LIVE FEED</span></div>
                 <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 15px;">
                     <div style="background: var(--bg); padding: 15px; border-radius: 8px; border: 1px solid var(--border);">
-                        <div style="font-size: 11px; font-family: var(--mono); color: var(--gold); margin-bottom: 8px; font-weight: 700;">🟢 WSS STREAM LOG [XAU/USD]</div>
+                        <div style="font-size: 11px; font-family: var(--mono); color: var(--gold); margin-bottom: 8px; font-weight: 700;">🟢 LSE WSS STREAM LOG [XAU/USD]</div>
                         <div style="font-family: var(--mono); font-size: 11px; color: var(--text); height: 120px; overflow-y: auto; line-height: 1.5;" id="ws-raw-log">
-                            [CONNECTED & AUTHENTICATED]<br>
-                            SUB: XAU/USD (Tick: 4347.61, Bid: 4347.40, Ask: 4347.80)<br>
-                            SUB_OPTIONS: GC Root active (Strikes loaded)<br>
-                            HEARTBEAT PONG OK
+                            [CONNECTING TO WSS://DATA-WS.LONDONSTRATEGICEDGE.COM...]
                         </div>
                     </div>
                     <div style="background: var(--bg); padding: 15px; border-radius: 8px; border: 1px solid var(--border);">
                         <div style="font-size: 11px; font-family: var(--mono); color: var(--green); margin-bottom: 8px; font-weight: 700;">🐋 SMART MONEY OPTIONS BLOCK FLOW (> $250k)</div>
-                        <div style="font-family: var(--mono); font-size: 11px; colo; var(--text); height: 120px; overflow-y: auto; line-height: 1.5;" id="ws-raw-log">
-                            [CONNECTED & AUTHENTICATED]<br>
-                            SUB: XAU/USD (Tick: 4347.61, Bid: 4347.40, Ask: 4347.80)<br>
-                            SUB_OPTIONS: GC Root active (Strikes loaded)<br>
-                            HEARTBEAT PONG OK
+                        <div style="font-family: var(--mono); font-size: 11px; color: var(--text); height: 120px; overflow-y: auto; line-height: 1.5;" id="ws-raw-log">
+                            [CONNECTING TO WSS://DATA-WS.LONDONSTRATEGICEDGE.COM...]
                         </div>
                     </div>
                     <div style="background: var(--bg); padding: 15px; border-radius: 8px; border: 1px solid var(--border);">
                         <div style="font-size: 11px; font-family: var(--mono); color: var(--green); margin-bottom: 8px; font-weight: 700;">🐋 SMART MONEY OPTIONS BLOCK FLOW (> $250k)</div>
-                        <div style="font-family: var(--mono); font-size: 11px; color: var(--text); line-height: 1.5;">
+                        <div style="font-family: var(--mono); font-size: 11px; color: var(--text); height: 120px; overflow-y: auto; line-height: 1.5;" id="block-flow-log">
                             • <b>PUT BLOCK:</b> $4250 Strike | Premium: $420,000 | Sweep (Bearish Hedge)<br>
                             • <b>CALL BLOCK:</b> $4400 Strike | Premium: $850,000 | Split (Bullish Absorption)
                         </div>
@@ -474,35 +468,72 @@
         }
 
         function initLiveWebSocket() {
-            const ws = new WebSocket('wss://stream.binance.com:9443/ws/paxgusdt@trade');
+            const wsUrl = 'wss://data-ws.londonstrategicedge.com';
+            const ws = new WebSocket(wsUrl);
             
             ws.onopen = () => {
                 const logBox = document.getElementById('ws-raw-log');
                 if(logBox) {
-                    logBox.innerHTML = `[TRUE WSS LIVE CONNECTED]<br>` + logBox.innerHTML;
+                    logBox.innerHTML = `[LSE WSS LIVE CONNECTED & AUTHENTICATED]<br>` + logBox.innerHTML;
                 }
             };
 
             ws.onmessage = (event) => {
-                const packet = JSON.parse(event.data);
-                const livePrice = parseFloat(packet.p);
-                
-                if (!isNaN(livePrice)) {
-                    document.getElementById('t-spot').innerText = `$${livePrice.toFixed(2)}`;
+                try {
+                    const packet = JSON.parse(event.data);
                     
-                    const logBox = document.getElementById('ws-raw-log');
-                    if(logBox && Math.random() < 0.2) {
-                        const timeStr = new Date().toISOString().substring(11, 19);
-                        logBox.innerHTML = `[${timeStr} UTC] TICK_EXEC: ${livePrice.toFixed(2)} USD<br>` + logBox.innerHTML;
+                    const livePrice = parseFloat(packet.spot || packet.p || packet.price);
+                    if (!isNaN(livePrice)) {
+                        document.getElementById('t-spot').innerText = `$${livePrice.toFixed(2)}`;
+                        
+                        const logBox = document.getElementById('ws-raw-log');
+                        if(logBox && Math.random() < 0.3) {
+                            const timeStr = new Date().toISOString().substring(11, 19);
+                            logBox.innerHTML = `[${timeStr} UTC] TICK_EXEC: ${livePrice.toFixed(2)} USD<br>` + logBox.innerHTML;
+                        }
                     }
+
+                    if (packet.bids_pct !== undefined && packet.asks_pct !== undefined) {
+                        const bidsPct = parseFloat(packet.bids_pct);
+                        const asksPct = parseFloat(packet.asks_pct);
+                        
+                        document.getElementById('bids-label').innerText = `Bids (Buyers): ${bidsPct}%`;
+                        document.getElementById('asks-label').innerText = `Asks (Sellers): ${asksPct}%`;
+                        document.getElementById('bids-progress-bar').style.width = `${bidsPct}%`;
+                    }
+
+                    if (packet.pulse_message) {
+                        const timeStr = new Date().toISOString().substring(11, 19);
+                        document.getElementById('ai-live-log').innerHTML = `<i>[${timeStr} UTC]</i> ${packet.pulse_message}`;
+                    }
+
+                    if (packet.block_flow) {
+                        const blockLog = document.getElementById('block-flow-log');
+                        if (blockLog) {
+                            const bType = packet.block_flow.type || "BLOCK";
+                            const bStrike = packet.block_flow.strike || "----";
+                            const bPrem = packet.block_flow.premium || "0";
+                            const bDetails = packet.block_flow.details || "Sweep / Block";
+                            
+                            const newBlockHtml = `• <b>${bType}:</b> $${bStrike} | Premium: $${bPrem} | ${bDetails}<br>`;
+                            blockLog.innerHTML = newBlockHtml + blockLog.innerHTML;
+                        }
+                    }
+
+                } catch (e) {
+                    console.log("Parsing stream packet error:", e);
                 }
             };
 
             ws.onerror = (err) => {
-                console.log("WSS Connection Error, retrying...", err);
+                console.log("LSE WSS Connection Error, retrying...", err);
             };
 
             ws.onclose = () => {
+                const logBox = document.getElementById('ws-raw-log');
+                if(logBox) {
+                    logBox.innerHTML = `[WSS DISCONNECTED. RECONNECTING IN 3s...]<br>` + logBox.innerHTML;
+                }
                 setTimeout(initLiveWebSocket, 3000);
             };
         }
