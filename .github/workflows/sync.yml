@@ -1,4 +1,4 @@
-name: Auto-Sync Quant Terminal & Market Data
+name: Gold Macro Engine & Alerts
 
 on:
   schedule:
@@ -9,14 +9,12 @@ permissions:
   contents: write
 
 jobs:
-  update-terminal:
+  run-alerts:
     runs-on: ubuntu-latest
     
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
 
       - name: Set up Python
         uses: actions/setup-python@v5
@@ -28,19 +26,19 @@ jobs:
           python -m pip install --upgrade pip
           python -m pip install pandas yfinance requests
 
-      - name: Run GEX & Macro Data Generator Script
+      - name: Run Macro & GEX Sync (Sends Radar Pulse)
         env:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
         run: |
           python generate_data.py
 
-      - name: Automatic Commit & Push
-        uses: stefanzweifel/git-auto-commit-action@v5
-        with:
-          commit_message: "auto: sync live GEX corridors and macro telemetry metrics [skip ci]"
-          branch: main
-          skip_ci: true
-          # Yeh line conflict aur rejection ko rokne ke liye purane changes ko pull kar legi
-          push_options: '--force'
+      - name: Commit and Push Updated Cache & Logs
+        run: |
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "github-actions[bot]@users.noreply.github.com"
+          git pull origin main --rebase || echo "No remote changes to rebase"
+          git add gex_levels.json lse_macro.csv || true
+          git commit -m "auto: sync live GEX corridors and macro telemetry metrics [skip ci]" || echo "No changes to commit"
+          git push origin main
           
