@@ -26,8 +26,11 @@ jobs:
           python -m pip install pandas yfinance requests
 
       - name: Run Data Update Script
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
         run: |
-          python generate_data.py # Aapki python script jo json/csv generate karti hai
+          python generate_data.py
 
       - name: Commit and Push Changes
         uses: stefanzweifel/git-auto-commit-action@v4
