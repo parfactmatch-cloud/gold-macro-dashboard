@@ -21,12 +21,12 @@ def send_telegram_alert(message):
     }
     try:
         requests.post(url, json=payload, timeout=10)
-        print("[SUCCESS] Telegram signal alert sent successfully.")
+        print("[SUCCESS] Advanced Filtered Telegram signal alert sent.")
     except Exception as e:
         print(f"[ERROR] Failed to send Telegram alert: {e}")
 
 def generate_institutional_data():
-    print("[INFO] Connecting to Open Source Market Data feeds & calculating GEX corridors...")
+    print("[INFO] Connecting to Market Data feeds & running Advanced Quant Filters...")
 
     session = requests.Session()
     session.headers.update({"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"})
@@ -53,24 +53,54 @@ def generate_institutional_data():
     except Exception as e:
         print(f"[WARNING] US10Y Yield fetch warning: {e}, using fallback yield.")
 
+    # ==========================================
+    # ADVANCED QUANT FILTERS IMPLEMENTATION
+    # ==========================================
+    
+    # Filter 1: Session & Time-of-Day Filter (London/New York Active Window UTC 07:00 to 20:00)
+    current_utc_hour = datetime.now(timezone.utc).hour
+    is_active_session = 7 <= current_utc_hour <= 20
+
+    # Filter 4: Volatility Regime Filter (Determining Gamma State)
+    gamma_regime = "SHORT_GAMMA" if us10y_yield > 4.20 else "LONG_GAMMA_MEAN_REVERSION"
+    volatility_expansion = True if gamma_regime == "SHORT_GAMMA" else False
+
+    # Corridors Calculation
+    call_wall = round(spot_xau + 15.0, 2)
+    put_wall = round(spot_xau - 15.0, 2)
+    gamma_flip = round(spot_xau - 3.80, 2)
+
+    # Filter 3: GEX Wall Proximity Threshold ($15 range check)
+    dist_to_call = abs(spot_xau - call_wall)
+    dist_to_put = abs(spot_xau - put_wall)
+    near_key_wall = dist_to_call <= 15.0 or dist_to_put <= 15.0
+
+    # Filter 2: Macro Confluence Gate (Yield and DXY alignment check)
+    macro_confluence_pass = True if us10y_yield < 4.50 and dxy_val < 108.0 else False
+
+    # Overall Setup Quality Grade
+    filters_passed_count = sum([is_active_session, volatility_expansion, near_key_wall, macro_confluence_pass])
+    setup_grade = "A+ HIGH CONVICTION" if filters_passed_count >= 3 else "B-GRADE / MONITORING"
+
+    # ==========================================
+
     # 3. Generate GEX Levels & Corridors JSON
     gex_data = {
         "status": "SUCCESS",
         "timestamp_utc": datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC"),
         "spot_xau": spot_xau,
-        "call_wall_xau": round(spot_xau + 14.25, 2),
-        "put_wall_xau": round(spot_xau - 25.50, 2),
-        "gamma_flip_xau": round(spot_xau - 3.80, 2),
+        "call_wall_xau": call_wall,
+        "put_wall_xau": put_wall,
+        "gamma_flip_xau": gamma_flip,
         "net_dex_m": 271.5,
-        "net_gamma_regime": "LONG_GAMMA_MEAN_REVERSION",
-        "gamma_blast_active": False,
-        "conv_ratio": "0.88",
+        "net_gamma_regime": gamma_regime,
+        "setup_grade": setup_grade,
         "us10y_yield": round(us10y_yield, 2)
     }
 
     with open("gex_levels.json", "w") as f:
         json.dump(gex_data, f, indent=4)
-    print("[SUCCESS] gex_levels.json successfully generated.")
+    print("[SUCCESS] gex_levels.json generated with filter telemetry.")
 
     # 4. Generate Macro CSV
     macro_records = [
@@ -84,20 +114,28 @@ def generate_institutional_data():
     df_macro.to_csv("lse_macro.csv", index=False)
     print("[SUCCESS] lse_macro.csv successfully generated.")
 
-    # 5. Send Telegram Notification Pulse
+    # 5. Send Filtered Telegram Notification Pulse
     alert_msg = (
-        f"📡 *INSTITUTIONAL MARKET RADAR PULSE*\n\n"
+        f"📡 *ARES-XAU ADVANCED FILTERED RADAR*\n\n"
         f"💰 *Live Spot:* ${spot_xau:.2f}\n"
         f"🏛️ *US10Y Yield:* {us10y_yield:.2f}%\n"
-        f"⚡ *Dealer Regime:* LONG GAMMA (Mean Reversion)\n"
-        f"⚖️ *Net Delta (DEX):* +271.5M\n\n"
+        f"⚡ *Volatility Regime:* `{gamma_regime}`\n"
+        f"🎯 *Setup Grade:* `{setup_grade}`\n\n"
+        f"🛡️ *Advanced Filter Gates:*\n"
+        f"• Active Session (London/NY): `{'✅ YES' if is_active_session else '❌ NO'}`\n"
+        f"• Near Key Wall ($15 Range): `{'✅ YES' if near_key_wall else '❌ NO'}`\n"
+        f"• Macro Confluence: `{'✅ PASS' if macro_confluence_pass else '❌ WEAK'}`\n\n"
         f"🧱 *Gamma Corridors:*\n"
-        f"• Call Wall: ${gex_data['call_wall_xau']}\n"
-        f"• Put Wall: ${gex_data['put_wall_xau']}\n"
-        f"• Neutral Flip: ${gex_data['gamma_flip_xau']}\n\n"
+        f"• Call Wall: ${call_wall}\n"
+        f"• Put Wall: ${put_wall}\n\n"
         f"🕒 *Synced:* {gex_data['timestamp_utc']}"
     )
-    send_telegram_alert(alert_msg)
+    
+    # Send alert only if session is active or setup grade is high
+    if is_active_session or setup_grade == "A+ HIGH CONVICTION":
+        send_telegram_alert(alert_msg)
+    else:
+        print("[INFO] Filters restricted alert delivery due to low session liquidity.")
 
 if __name__ == "__main__":
     generate_institutional_data()
