@@ -49,7 +49,6 @@ def generate_institutional_data():
         tnx_df = yf.download("^TNX", period="5d", interval="1d", session=session, progress=False)
         if not tnx_df.empty:
             raw_yield = float(tnx_df['Close'].iloc[-1].item())
-            # Yahoo Finance ^TNX returns yield in points (e.g., 42.8 means 4.28%)
             us10y_yield = raw_yield / 10.0 if raw_yield > 10 else raw_yield
     except Exception as e:
         print(f"[WARNING] US10Y Yield fetch warning: {e}, using fallback yield.")
