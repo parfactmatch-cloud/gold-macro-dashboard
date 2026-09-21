@@ -2,7 +2,7 @@ name: Auto-Sync Quant Terminal & Market Data
 
 on:
   schedule:
-    - cron: '*/5 * * * *'
+    - cron: '*/30 * * * *'
   workflow_dispatch:
 
 permissions:
@@ -27,6 +27,9 @@ jobs:
           python -m pip install pandas yfinance requests
 
       - name: Run GEX & Macro Data Generator Script
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
         run: |
           python generate_data.py
 
