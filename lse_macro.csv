@@ -1,5 +1,2 @@
-Asset_Vector,Live_Reference,Correlation_To_Gold
-US10Y_Real_Yield,2.53,-0.74
-US10Y_Nominal_Yield,4.96,-0.65
-US_Dollar_Index,104.25,-0.82
-Silver_XAG_USD,31.4,0.91
+timestamp,us10y_yield,yield_delta,gold_macro_impact,cot_bias,news_shield_active,news_sentiment
+2026-09-21 17:05:09,0.0,0.0,NEUTRAL,NEUTRAL,False,NEUTRAL
