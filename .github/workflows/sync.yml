@@ -35,11 +35,12 @@ jobs:
         run: |
           python generate_data.py
 
-      - name: Commit and Push Updated Data & UI
-        uses: stefanzweifel/git-auto-commit-action@v4
+      - name: Automatic Commit & Push
+        uses: stefanzweifel/git-auto-commit-action@v5
         with:
           commit_message: "auto: sync live GEX corridors and macro telemetry metrics [skip ci]"
           branch: main
+          skip_ci: true
+          # Yeh line conflict aur rejection ko rokne ke liye purane changes ko pull kar legi
           push_options: '--force'
-          commit_options: '--no-verify'
           
