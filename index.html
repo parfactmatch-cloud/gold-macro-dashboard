@@ -431,7 +431,6 @@
             document.getElementById('calc-acc').addEventListener('input', updateLotSize);
             document.getElementById('calc-risk').addEventListener('input', updateLotSize);
         }
-
                 async function syncTerminalData() {
             try {
                 const res = await fetch('gex_levels.json?' + new Date().getTime());
@@ -447,9 +446,9 @@
                         document.getElementById('gx-call-dist').innerText = `Distance to Spot: +$${Math.abs(data.call_wall_xau - data.spot_xau).toFixed(2)}`;
                         document.getElementById('gx-put-dist').innerText = `Distance to Spot: +$${Math.abs(data.spot_xau - data.put_wall_xau).toFixed(2)}`;
 
-                        // 🟢 Fallback: Agar WebSocket connect nahi hai, toh JSON se spot price yahan dikha do
+                        // 🟢 Fallback: WebSocket कनेक्ट न होने पर JSON से स्पॉट प्राइस सीधे यहां दिखेगा
                         const currentSpotElement = document.getElementById('t-spot');
-                        if (currentSpotElement.innerText === "Loading..." && data.spot_xau) {
+                        if ((currentSpotElement.innerText === "Loading..." || currentSpotElement.innerText === "") && data.spot_xau) {
                             currentSpotElement.innerText = `$${data.spot_xau.toFixed(2)}`;
                         }
                     }
@@ -470,6 +469,9 @@
                 }
             } catch (e) {
                 console.log("[SYNC NOTICE] Using fallback state:", e);
+            }
+                }
+        
             }
         }
             }
