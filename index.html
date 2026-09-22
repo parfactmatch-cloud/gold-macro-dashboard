@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>ARES-XAU | Advanced Multi-Tab Institutional Quant Terminal</title>
+    <title>ARES-XAU | LSE Advanced Quant Terminal</title>
     
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -60,16 +60,17 @@
             display: flex; justify-content: space-between; align-items: center;
             padding: 12px 20px;
         }
-        .brand { font-size: 15px; font-weight: 800; letter-spacing: 0.5px; color: var(--text); }
+        .brand { font-size: 15px; font-weight: 800; letter-spacing: 0.5px; color: var(--text); display: flex; align-items: center; gap: 8px;}
         .brand span { color: var(--gold); }
         
-        .header-actions { display: flex; align-items: center; gap: 12px; }
-        .theme-toggle {
+        .header-actions { display: flex; align-items: center; gap: 10px; }
+        .action-btn {
             background: var(--surface-card); border: 1px solid var(--border);
-            color: var(--text); padding: 5px 12px; border-radius: 6px; font-size: 11px;
-            font-family: var(--mono); cursor: pointer; font-weight: 600;
+            color: var(--text); padding: 6px 12px; border-radius: 6px; font-size: 11px;
+            font-family: var(--mono); cursor: pointer; font-weight: 600; display: inline-flex; align-items: center; gap: 5px;
+            transition: all 0.2s ease;
         }
-        .theme-toggle:hover { border-color: var(--gold); }
+        .action-btn:hover { border-color: var(--gold); background: var(--border); }
 
         .live-badge {
             background: rgba(16, 185, 129, 0.15); border: 1px solid rgba(16, 185, 129, 0.4);
@@ -146,6 +147,12 @@
 
         .chart-container { width: 100%; height: 500px; background: #000; border-radius: 8px; overflow: hidden; border: 1px solid var(--border); }
 
+        .tool-banner {
+            background: linear-gradient(135deg, rgba(245,158,11,0.1), rgba(16,185,129,0.05));
+            border: 1px solid rgba(245,158,11,0.3); border-radius: 10px; padding: 15px 20px;
+            display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px;
+        }
+
         @media (max-width: 768px) {
             .workspace { padding: 10px; }
             .chart-container { height: 380px; }
@@ -155,11 +162,12 @@
 <body>
 
     <header>
-        <div class="brand">Ω ARES<span>QUANT</span> MULTI-TAB TERMINAL</div>
+        <div class="brand">Ω ARES<span>QUANT</span> LSE TERMINAL</div>
         <div class="header-actions">
-            <button class="theme-toggle" onclick="toggleTheme()">☀️ / 🌙 Theme</button>
+            <button class="action-btn" onclick="triggerManualSync()">🔄 Sync LSE Stream</button>
+            <button class="action-btn" onclick="toggleTheme()">☀️ / 🌙</button>
             <div class="live-badge">
-                <div class="live-dot"></div> TELEMETRY ACTIVE
+                <div class="live-dot"></div> LSE TELEMETRY ACTIVE
             </div>
         </div>
     </header>
@@ -167,14 +175,25 @@
     <nav class="tab-nav">
         <button class="tab-btn active" onclick="switchTab('pane-dashboard', this)">📊 Market Dashboard</button>
         <button class="tab-btn" onclick="switchTab('pane-gex', this)">🧱 GEX & Walls</button>
-        <button class="tab-btn" onclick="switchTab('pane-macro', this)">🏛️ Macro & Correlation</button>
-        <button class="tab-btn" onclick="switchTab('pane-ws', this)">⚡ WebSocket & Flow</button>
-        <button class="tab-btn" onclick="switchTab('pane-backtest', this)">📉 Replay & Backtest</button>
-        <button class="tab-btn" onclick="switchTab('pane-signals', this)">📡 Signal Intent</button>
+        <button class="tab-btn" onclick="switchTab('pane-macro', this)">🏛️ LSE Macro Matrix</button>
+        <button class="tab-btn" onclick="switchTab('pane-ws', this)">⚡ WSS Block Flow</button>
+        <button class="tab-btn" onclick="switchTab('pane-backtest', this)">📉 Backtest Lab</button>
+        <button class="tab-btn" onclick="switchTab('pane-signals', this)">📡 LSE Radar Pulse</button>
         <button class="tab-btn" onclick="switchTab('pane-mindset', this)">🧠 Playbook</button>
     </nav>
 
     <div class="workspace">
+
+        <!-- LSE Control Banner -->
+        <div class="tool-banner">
+            <div>
+                <div style="font-size: 13px; font-weight: 800; color: var(--gold-light); font-family: var(--mono);">🌐 London Strategic Edge (LSE) Data Core Connected</div>
+                <div style="font-size: 11px; color: var(--muted); font-family: var(--mono);">Sync Timestamp: <span id="last-sync-time">Just now</span> | Pipeline: Automated GitHub Actions & WSS</div>
+            </div>
+            <div>
+                <button class="action-btn" style="background: var(--gold); color: #000; font-weight: 800;" onclick="exportDashboardData()">📥 Export LSE Metrics</button>
+            </div>
+        </div>
 
         <!-- Global Ticker -->
         <div class="metrics-grid">
@@ -200,12 +219,12 @@
             </div>
         </div>
 
-        <!-- TAB 1: MARKET DASHBOARD (Includes Telemetry Panel) -->
+        <!-- TAB 1: MARKET DASHBOARD -->
         <div id="pane-dashboard" class="tab-pane active">
             <div class="card-box">
                 <div class="card-header">
                     <span>XAU/USD Real-Time Tick & Chart Feed</span>
-                    <span style="color: var(--gold);">OANDA / CME</span>
+                    <span style="color: var(--gold);">OANDA / CME / LSE</span>
                 </div>
                 <div class="chart-container">
                     <iframe src="https://s.tradingview.com/widgetembed/?frameElementId=tradingview_widget&symbol=OANDA%3AXAUUSD&interval=15&theme=dark" 
@@ -213,25 +232,22 @@
                 </div>
             </div>
 
-            <!-- In-Page Execution & Telemetry Panel -->
+            <!-- LSE Advanced Telemetry Panel -->
             <div class="card-box">
                 <div class="card-header">
-                    <span>⚡ Institutional Execution & Order Flow Telemetry</span>
+                    <span>⚡ LSE Institutional Filter Gates & Order Flow Telemetry</span>
                     <span style="color: var(--green);" id="stream-status-badge">● LSE WSS Live</span>
                 </div>
 
                 <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 15px;">
                     
                     <div style="background: var(--bg); padding: 14px; border-radius: 8px; border: 1px solid var(--border);">
-                        <div style="font-size: 10px; font-family: var(--mono); color: var(--muted); margin-bottom: 6px; font-weight: 700;">ORDER FLOW LIQUIDITY IMBALANCE</div>
-                        <div style="display: flex; justify-content: space-between; font-size: 11px; font-family: var(--mono); margin-bottom: 4px; font-weight: 700;">
-                            <span id="bids-label" style="color: var(--green);">Bids (Buyers): 58%</span>
-                            <span id="asks-label" style="color: var(--red);">Asks (Sellers): 42%</span>
+                        <div style="font-size: 10px; font-family: var(--mono); color: var(--muted); margin-bottom: 6px; font-weight: 700;">LSE FILTER GATES STATUS</div>
+                        <div style="font-size: 11px; font-family: var(--mono); line-height: 1.6; color: var(--text);">
+                            • Active Session (London/NY): <b style="color: var(--green);">YES</b><br>
+                            • Near Key Wall ($15 Range): <b style="color: var(--green);">YES</b><br>
+                            • Macro Confluence: <b style="color: var(--red);">WEAK / NEUTRAL</b>
                         </div>
-                        <div style="width: 100%; height: 6px; background: rgba(244,63,94,0.3); border-radius: 3px; overflow: hidden;"> 
-                            <div id="bids-progress-bar" style="width: 58%; height: 100%; background: var(--green); transition: width 0.3s ease;"></div>
-                        </div>
-                        <div id="imbalance-status-text" style="font-size: 10px; color: var(--muted); margin-top: 6px;">Status: Mild institutional bid accumulation near Put Wall.</div>
                     </div>
 
                     <div style="background: var(--bg); padding: 14px; border-radius: 8px; border: 1px solid var(--border);">
@@ -246,9 +262,9 @@
                     </div>
 
                     <div style="background: var(--bg); padding: 14px; border-radius: 8px; border: 1px solid var(--border);">
-                        <div style="font-size: 10px; font-family: var(--mono); color: var(--muted); margin-bottom: 6px; font-weight: 700;">AI SENTINEL REAL-TIME PULSE</div>
+                        <div style="font-size: 10px; font-family: var(--mono); color: var(--muted); margin-bottom: 6px; font-weight: 700;">LSE SENTINEL REAL-TIME PULSE</div>
                         <div id="ai-live-log" style="font-size: 11px; font-family: var(--mono); color: var(--text); line-height: 1.4;">
-                            <i>[09:44 UTC]</i> Scanning GEX corridors via LSE stream... Ready for micro-lot pullback triggers.
+                            <i>[09:44 UTC]</i> Scanning LSE GEX corridors... Ready for institutional pullback triggers.
                         </div>
                     </div>
 
@@ -259,7 +275,7 @@
         <!-- TAB 2: GEX & WALLS -->
         <div id="pane-gex" class="tab-pane">
             <div class="card-box">
-                <div class="card-header"><span>Options Dealer Gamma Corridors & Structural Walls</span><span>GEX ENGINE</span></div>
+                <div class="card-header"><span>LSE Options Dealer Gamma Corridors & Structural Walls</span><span>GEX ENGINE</span></div>
                 <div style="display: grid; gap: 12px;">
                     <div style="background: rgba(244, 63, 94, 0.05); border: 1px solid rgba(244, 63, 94, 0.2); padding: 16px; border-radius: 8px; display: flex; justify-content: space-between; align-items: center;">
                         <div>
@@ -286,10 +302,10 @@
             </div>
         </div>
 
-        <!-- TAB 3: MACRO & CORRELATION MATRIX -->
+        <!-- TAB 3: LSE MACRO MATRIX -->
         <div id="pane-macro" class="tab-pane">
             <div class="card-box">
-                <div class="card-header"><span>Cross-Asset Correlation Matrix & Relative Strength</span><span>FRED / LSE</span></div>
+                <div class="card-header"><span>LSE Cross-Asset Correlation & Macro Matrix</span><span>FRED / LSE</span></div>
                 <div class="table-wrap">
                     <table>
                         <thead>
@@ -297,7 +313,7 @@
                                 <th>Asset / Vector</th>
                                 <th>Live Reference</th>
                                 <th>Correlation to Gold</th>
-                                <th>Divergence Impact</th>
+                                <th>Institutional Impact</th>
                             </tr>
                         </thead>
                         <tbody>
@@ -314,7 +330,7 @@
                                 <td>Capital holding cost drag.</td>
                             </tr>
                             <tr>
-                                <td><b>Silver (XAG/USD)</b></td>
+                                <td><b>Silver Beta (XAG/USD)</b></td>
                                 <td>$31.40</td>
                                 <td style="color: var(--green); font-weight: 700;">+0.91 (Strong Positive)</td>
                                 <td>Precious metals beta alignment confirmed.</td>
@@ -325,19 +341,13 @@
             </div>
         </div>
 
-        <!-- TAB 4: WEBSOCKET & SMART MONEY OPTIONS FLOW -->
+        <!-- TAB 4: WSS BLOCK FLOW -->
         <div id="pane-ws" class="tab-pane">
             <div class="card-box">
-                <div class="card-header"><span>WSS Data Feed & Smart Money Block Flow</span><span>LIVE FEED</span></div>
+                <div class="card-header"><span>LSE WSS Data Feed & Smart Money Block Flow</span><span>LIVE FEED</span></div>
                 <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 15px;">
                     <div style="background: var(--bg); padding: 15px; border-radius: 8px; border: 1px solid var(--border);">
                         <div style="font-size: 11px; font-family: var(--mono); color: var(--gold); margin-bottom: 8px; font-weight: 700;">🟢 LSE WSS STREAM LOG [XAU/USD]</div>
-                        <div style="font-family: var(--mono); font-size: 11px; color: var(--text); height: 120px; overflow-y: auto; line-height: 1.5;" id="ws-raw-log">
-                            [CONNECTING TO WSS://DATA-WS.LONDONSTRATEGICEDGE.COM...]
-                        </div>
-                    </div>
-                    <div style="background: var(--bg); padding: 15px; border-radius: 8px; border: 1px solid var(--border);">
-                        <div style="font-size: 11px; font-family: var(--mono); color: var(--green); margin-bottom: 8px; font-weight: 700;">🐋 SMART MONEY OPTIONS BLOCK FLOW (> $250k)</div>
                         <div style="font-family: var(--mono); font-size: 11px; color: var(--text); height: 120px; overflow-y: auto; line-height: 1.5;" id="ws-raw-log">
                             [CONNECTING TO WSS://DATA-WS.LONDONSTRATEGICEDGE.COM...]
                         </div>
@@ -353,14 +363,14 @@
             </div>
         </div>
 
-        <!-- TAB 5: HISTORICAL REPLAY & BACKTEST SIMULATOR -->
+        <!-- TAB 5: BACKTEST LAB -->
         <div id="pane-backtest" class="tab-pane">
             <div class="card-box">
-                <div class="card-header"><span>24-Hour GEX Replay & Strategy Backtest Simulator</span><span>QUANT LAB</span></div>
+                <div class="card-header"><span>LSE 24-Hour GEX Replay & Strategy Backtest Simulator</span><span>QUANT LAB</span></div>
                 <div class="intel-box">
                     <div class="intel-title">📈 Historical Replay Simulation (Past 24 Hours)</div>
                     <div class="intel-body">
-                        • <b>Replay Window:</b> Past 24 Hours Session.<br>
+                        • <b>Replay Window:</b> Past 24 Hours LSE Session.<br>
                         • <b>Signals Evaluated:</b> 5 Pulses | <b>Successfully Filtered False Breaks:</b> 2 | <b>Clean Executions:</b> 3<br>
                         • <b>Backtest Win Rate:</b> 100% adherence to Call/Put wall boundary rejections with an average R:R of 1:1.95.
                     </div>
@@ -368,12 +378,12 @@
             </div>
         </div>
 
-        <!-- TAB 6: SIGNAL INTENT -->
+        <!-- TAB 6: LSE RADAR PULSE -->
         <div id="pane-signals" class="tab-pane">
             <div class="card-box">
-                <div class="card-header"><span>Verified Signal Ledger & Institutional Intent Breakdown</span><span>AUTONOMOUS ENGINE</span></div>
+                <div class="card-header"><span>LSE Verified Signal Ledger & Institutional Intent</span><span>AUTONOMOUS ENGINE</span></div>
                 <div class="intel-box">
-                    <div class="intel-title">⚡ Latest Signal Intel: Trend Pullback Short at Ceiling</div>
+                    <div class="intel-title">⚡ LSE Filtered Radar Signal: Trend Pullback Short at Ceiling</div>
                     <div class="intel-body">
                         • <b>Why live price is here:</b> Price tested upper Call Wall boundary where market makers hold heavy long gamma.<br>
                         • <b>What big players are cooking:</b> Commercial hedgers distributing long inventory into retail breakouts.
@@ -399,6 +409,8 @@
     </div>
 
     <script>
+        let cachedDashboardData = {};
+
         function toggleTheme() {
             const html = document.documentElement;
             const currentTheme = html.getAttribute('data-theme');
@@ -431,11 +443,13 @@
             document.getElementById('calc-acc').addEventListener('input', updateLotSize);
             document.getElementById('calc-risk').addEventListener('input', updateLotSize);
         }
-                async function syncTerminalData() {
+
+        async function syncTerminalData() {
             try {
                 const res = await fetch('gex_levels.json?' + new Date().getTime());
                 if (res.ok) {
                     const data = await res.json();
+                    cachedDashboardData = data;
                     if (data.call_wall_xau) {
                         document.getElementById('gx-call').innerText = `$${data.call_wall_xau.toFixed(2)}`;
                         document.getElementById('gx-put').innerText = `$${data.put_wall_xau.toFixed(2)}`;
@@ -446,7 +460,6 @@
                         document.getElementById('gx-call-dist').innerText = `Distance to Spot: +$${Math.abs(data.call_wall_xau - data.spot_xau).toFixed(2)}`;
                         document.getElementById('gx-put-dist').innerText = `Distance to Spot: +$${Math.abs(data.spot_xau - data.put_wall_xau).toFixed(2)}`;
 
-                        // 🟢 Fallback: WebSocket कनेक्ट न होने पर JSON से स्पॉट प्राइस सीधे यहां दिखेगा
                         const currentSpotElement = document.getElementById('t-spot');
                         if ((currentSpotElement.innerText === "Loading..." || currentSpotElement.innerText === "") && data.spot_xau) {
                             currentSpotElement.innerText = `$${data.spot_xau.toFixed(2)}`;
@@ -467,14 +480,32 @@
                         }
                     }
                 }
+
+                const nowTime = new Date().toLocaleTimeString();
+                document.getElementById('last-sync-time').innerText = nowTime;
             } catch (e) {
-                console.log("[SYNC NOTICE] Using fallback state:", e);
-            }
-                }
-        
+                console.log("[SYNC NOTICE] Using LSE fallback state:", e);
             }
         }
-            }
+
+        function triggerManualSync() {
+            syncTerminalData();
+            const btn = document.querySelector('.action-btn');
+            const originalText = btn.innerHTML;
+            btn.innerHTML = "⏳ Syncing LSE...";
+            setTimeout(() => {
+                btn.innerHTML = originalText;
+            }, 800);
+        }
+
+        function exportDashboardData() {
+            const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(cachedDashboardData, null, 2));
+            const downloadAnchor = document.createElement('a');
+            downloadAnchor.setAttribute("href", dataStr);
+            downloadAnchor.setAttribute("download", "lse_ares_quant_metrics.json");
+            document.body.appendChild(downloadAnchor);
+            downloadAnchor.click();
+            downloadAnchor.remove();
         }
 
         function initLiveWebSocket() {
@@ -499,7 +530,7 @@
                         const logBox = document.getElementById('ws-raw-log');
                         if(logBox && Math.random() < 0.3) {
                             const timeStr = new Date().toISOString().substring(11, 19);
-                            logBox.innerHTML = `[${timeStr} UTC] TICK_EXEC: ${livePrice.toFixed(2)} USD<br>` + logBox.innerHTML;
+                            logBox.innerHTML = `[${timeStr} UTC] LSE_TICK: ${livePrice.toFixed(2)} USD<br>` + logBox.innerHTML;
                         }
                     }
 
@@ -515,19 +546,6 @@
                     if (packet.pulse_message) {
                         const timeStr = new Date().toISOString().substring(11, 19);
                         document.getElementById('ai-live-log').innerHTML = `<i>[${timeStr} UTC]</i> ${packet.pulse_message}`;
-                    }
-
-                    if (packet.block_flow) {
-                        const blockLog = document.getElementById('block-flow-log');
-                        if (blockLog) {
-                            const bType = packet.block_flow.type || "BLOCK";
-                            const bStrike = packet.block_flow.strike || "----";
-                            const bPrem = packet.block_flow.premium || "0";
-                            const bDetails = packet.block_flow.details || "Sweep / Block";
-                            
-                            const newBlockHtml = `• <b>${bType}:</b> $${bStrike} | Premium: $${bPrem} | ${bDetails}<br>`;
-                            blockLog.innerHTML = newBlockHtml + blockLog.innerHTML;
-                        }
                     }
 
                 } catch (e) {
@@ -556,4 +574,3 @@
     </script>
 </body>
 </html>
-
