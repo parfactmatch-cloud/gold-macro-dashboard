@@ -1,12 +1,12 @@
 {
     "status": "SUCCESS",
-    "timestamp_utc": "2026-09-23 17:56:26 UTC",
-    "spot_xau": 4325.2001953125,
-    "call_wall_xau": 4340.2,
-    "put_wall_xau": 4310.2,
-    "gamma_flip_xau": 4321.4,
+    "timestamp_utc": "2026-09-23 20:33:40 UTC",
+    "spot_xau": 4320.39990234375,
+    "call_wall_xau": 4335.4,
+    "put_wall_xau": 4305.4,
+    "gamma_flip_xau": 4316.6,
     "net_dex_m": 271.5,
     "net_gamma_regime": "SHORT_GAMMA",
     "setup_grade": "A+ HIGH CONVICTION",
-    "us10y_yield": 5.13
+    "us10y_yield": 5.11
 }
