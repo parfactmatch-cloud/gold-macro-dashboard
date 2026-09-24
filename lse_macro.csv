@@ -1,2 +1,5 @@
-timestamp,us10y_yield,yield_delta,gold_macro_impact,cot_bias,news_shield_active,news_sentiment
-2026-09-24 23:29:18,0.0,0.0,NEUTRAL,NEUTRAL,False,NEUTRAL
+Asset_Vector,Live_Reference,Correlation_To_Gold
+US10Y_Real_Yield,2.73,-0.74
+US10Y_Nominal_Yield,5.16,-0.65
+US_Dollar_Index,104.25,-0.82
+Silver_XAG_USD,31.4,0.91
