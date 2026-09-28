@@ -5,6 +5,7 @@ Handles Market Radar Pulses, Execution Cards, and Gatekeeper Rejections.
 """
 
 import os
+import json
 import requests
 from datetime import datetime, timezone
 
@@ -31,9 +32,14 @@ def dispatch_telegram(message: str) -> bool:
             json={"chat_id": TELEGRAM_CHAT_ID, "text": message, "parse_mode": "HTML"}, 
             timeout=10
         )
-        return res.status_code == 200
+        if res.status_code == 200:
+            print("[TG OK] Alert dispatched successfully.")
+            return True
+        else:
+            print(f"[TG ERROR] Telegram API returned {res.status_code}: {res.text}")
+            return False
     except Exception as e:
-        print(f"[TG ERROR] {e}")
+        print(f"[TG ERROR] Exception: {e}")
         return False
 
 def broadcast_execution_card(side: str, spot: float, sl: float, tp: float, regime_tag: str, call_wall="N/A", put_wall="N/A", net_dex="N/A") -> bool:
@@ -127,3 +133,45 @@ def broadcast_market_pulse(
     )
     return dispatch_telegram(pulse_card)
 
+if __name__ == "__main__":
+    script_dir = os.path.dirname(os.path.abspath(__file__))
+    json_path = os.path.join(script_dir, "gex_levels.json")
+    
+    if not os.path.exists(json_path):
+        print(f"[MAIN] {json_path} not found. Skipping pulse broadcast.")
+        exit(0)
+        
+    try:
+        with open(json_path, "r") as f:
+            data = json.load(f)
+            
+        spot = float(data.get("spot_xau", 4300.0))
+        c_wall = float(data.get("call_wall_xau", 4500.0))
+        p_wall = float(data.get("put_wall_xau", 4100.0))
+        g_flip = float(data.get("gamma_flip_xau", spot))
+        regime = str(data.get("net_gamma_regime", "LONG_GAMMA_MEAN_REVERT"))
+        dex = float(data.get("net_dex_m", 0.0))
+        blast = bool(data.get("gamma_blast_active", False))
+        t_call = str(data.get("call_distance_telemetry", "Call: N/A"))
+        t_put = str(data.get("put_distance_telemetry", "Put: N/A"))
+        valid = bool(data.get("is_corridor_valid", True))
+        
+        # Dispatch Radar Pulse
+        print("[MAIN] Firing Institutional Radar Pulse to Telegram...")
+        broadcast_market_pulse(
+            spot=spot,
+            call_wall=c_wall,
+            put_wall=p_wall,
+            gamma_flip=g_flip,
+            regime=regime,
+            us10y_yield=4.35,
+            us10y_impact="NEUTRAL_CONSOLIDATION",
+            net_dex=dex,
+            blast_active=blast,
+            telemetry_call=t_call,
+            telemetry_put=t_put,
+            is_corridor_valid=valid
+        )
+    except Exception as e:
+        print(f"[MAIN ERROR] Failed to dispatch radar pulse: {e}")
+    
