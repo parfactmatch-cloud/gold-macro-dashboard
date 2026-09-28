@@ -194,10 +194,14 @@ class GoldGEXEngine:
                 "is_corridor_valid": bool(is_corridor_valid)
             }
 
-            with open(CACHE_FILE, "w") as f:
-                json.dump(payload, f, indent=2)
+                    script_dir = os.path.dirname(os.path.abspath(__file__))
+        json_path = os.path.join(script_dir, "gex_levels.json")
 
-            return payload
+        with open(json_path, "w") as f:
+            json.dump(payload, f, indent=2)
+
+        print(f"File successfully written to: {json_path}")
+        return payload
 
         except Exception as err:
             if os.path.exists(CACHE_FILE):
