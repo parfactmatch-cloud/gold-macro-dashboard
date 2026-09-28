@@ -47,5 +47,4 @@ jobs:
         with:
           commit_message: "auto: update live GEX corridors and clean institutional telemetry"
           branch: main
-          file_pattern: 'gex_levels.json trade_log.csv lse_macro.csv'
           
