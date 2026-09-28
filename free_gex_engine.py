@@ -13,7 +13,9 @@ import pandas as pd
 from scipy.stats import norm
 import yfinance as yf
 
-CACHE_FILE = os.path.join(os.path.dirname(__file__), "gex_levels.json")
+# Guaranteed root directory absolute path
+SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+CACHE_FILE = os.path.join(SCRIPT_DIR, "gex_levels.json")
 
 class GoldGEXEngine:
     def __init__(self, risk_free_rate: float = 0.045):
@@ -66,7 +68,6 @@ class GoldGEXEngine:
 
             # -----------------------------------------------------------------
             # SANITY CLAMP: Exclude strikes beyond +/- 20% of current GLD price
-            # (Prevents $9254 / $2258 extreme outlier corruption)
             # -----------------------------------------------------------------
             min_valid_strike = s_gld * 0.80
             max_valid_strike = s_gld * 1.20
@@ -100,7 +101,7 @@ class GoldGEXEngine:
                     if oi > 0 and 0.05 <= iv <= 1.50:
                         gamma, _, d_put = self._bsm_greeks(s_gld, strike, T, self.r, iv)
                         gex = gamma * oi * 100.0 * (s_gld ** 2) * 0.01
-                        put_gex_map[strike] = put_gex_map.get(strike, 0.0) + gex  # Store positive magnitude
+                        put_gex_map[strike] = put_gex_map.get(strike, 0.0) + gex
                         total_put_dex += (abs(d_put) * oi * 100.0 * s_gld) / 1_000_000.0
 
             if not call_gex_map or not put_gex_map:
@@ -109,21 +110,18 @@ class GoldGEXEngine:
             # -----------------------------------------------------------------
             # 1. ROBUST PARTITIONING & COLLISION GUARD
             # -----------------------------------------------------------------
-            # Call Wall strictly >= GLD Spot
             otm_calls = {k: v for k, v in call_gex_map.items() if k >= s_gld and v > 0}
             if otm_calls:
                 call_wall_gld = max(otm_calls, key=otm_calls.get)
             else:
                 call_wall_gld = max(call_gex_map, key=call_gex_map.get)
 
-            # Put Wall strictly <= GLD Spot
             otm_puts = {k: v for k, v in put_gex_map.items() if k <= s_gld and v > 0}
             if otm_puts:
                 put_wall_gld = max(otm_puts, key=otm_puts.get)
             else:
                 put_wall_gld = max(put_gex_map, key=put_gex_map.get)
 
-            # Strict Boundary Enforcer (Guarantees Put Wall < Call Wall)
             if put_wall_gld >= call_wall_gld:
                 sub_puts = {k: v for k, v in put_gex_map.items() if k < call_wall_gld and v > 0}
                 if sub_puts:
@@ -131,12 +129,11 @@ class GoldGEXEngine:
                 else:
                     put_wall_gld = round(call_wall_gld * 0.98, 2)
 
-            # Convert to Spot/Futures XAU Parity
             call_wall_xau = round(call_wall_gld * conv_ratio, 2)
             put_wall_xau = round(put_wall_gld * conv_ratio, 2)
 
             # -----------------------------------------------------------------
-            # 2. TELEMETRY CLEAN STRING FORMATTER (NO -$-75 BUG)
+            # 2. TELEMETRY CLEAN STRING FORMATTER
             # -----------------------------------------------------------------
             call_dist = call_wall_xau - spot_xau
             put_dist = spot_xau - put_wall_xau
@@ -156,7 +153,6 @@ class GoldGEXEngine:
             net_gex_dict = {k: call_gex_map.get(k, 0.0) - put_gex_map.get(k, 0.0) for k in strikes}
             total_net_gex = sum(net_gex_dict.values())
 
-            # Find zero-crossing closest to current spot (not at extremes)
             gamma_flip_gld = s_gld
             best_diff = float("inf")
             for i in range(len(strikes) - 1):
@@ -169,7 +165,6 @@ class GoldGEXEngine:
                         best_diff = diff
                         gamma_flip_gld = midpoint
 
-            # Fallback if no sign flip within +/- 10%
             if best_diff == float("inf"):
                 gamma_flip_gld = s_gld
 
@@ -194,14 +189,11 @@ class GoldGEXEngine:
                 "is_corridor_valid": bool(is_corridor_valid)
             }
 
-                    script_dir = os.path.dirname(os.path.abspath(__file__))
-        json_path = os.path.join(script_dir, "gex_levels.json")
+            with open(CACHE_FILE, "w") as f:
+                json.dump(payload, f, indent=2)
 
-        with open(json_path, "w") as f:
-            json.dump(payload, f, indent=2)
-
-        print(f"File successfully written to: {json_path}")
-        return payload
+            print(f"File successfully written to: {CACHE_FILE}")
+            return payload
 
         except Exception as err:
             if os.path.exists(CACHE_FILE):
@@ -243,5 +235,10 @@ class GoldGEXEngine:
             "call_distance_telemetry": "Call: N/A",
             "put_distance_telemetry": "Put: N/A",
             "is_corridor_valid": False
-                    }
-                    
+        }
+
+if __name__ == "__main__":
+    engine = GoldGEXEngine()
+    result = engine.compute_gex()
+    print("Execution complete. Output:", json.dumps(result, indent=2))
+            
