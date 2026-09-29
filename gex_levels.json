@@ -1,16 +1,22 @@
 {
-  "timestamp_utc": "2026-09-29 02:20:11 UTC",
+  "timestamp_utc": "2026-09-29 15:48:45 UTC",
   "status": "HEALTHY",
-  "spot_xau": 4300.0,
-  "gld_close": 377.91,
-  "conv_ratio": 11.3784,
-  "call_wall_xau": 4551.35,
-  "put_wall_xau": 4266.89,
-  "gamma_flip_xau": 4192.93,
-  "net_dex_m": -5077.31,
+  "spot_xau": 4157.49,
+  "data_source": "TWELVE_DATA",
+  "gld_close": 381.2,
+  "conv_ratio": 10.9063,
+  "call_wall_xau": 4362.53,
+  "put_wall_xau": 4144.4,
+  "gamma_flip_xau": 4258.92,
+  "net_dex_m": -3581.64,
   "net_gamma_regime": "SHORT_GAMMA_EXPANSION",
   "gamma_blast_active": true,
-  "call_distance_telemetry": "Call: +$251.35",
-  "put_distance_telemetry": "Put: +$33.11",
-  "is_corridor_valid": true
+  "call_distance_telemetry": "Call: +$205.04",
+  "put_distance_telemetry": "Put: +$13.09",
+  "is_corridor_valid": true,
+  "lse_telemetry": {
+    "lse_status": "ONLINE",
+    "institutional_core": "AUTHENTICATED",
+    "order_flow_bias": "NEUTRAL"
+  }
 }
