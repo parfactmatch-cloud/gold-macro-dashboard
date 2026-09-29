@@ -26,6 +26,10 @@ jobs:
           python -m pip install pandas numpy scipy yfinance requests
 
       - name: Compute Live Black-Scholes GEX Levels
+        env:
+          TWELVE_DATA_API_KEY: ${{ secrets.TWELVE_DATA_API_KEY }}
+          LSE_API_KEY: ${{ secrets.LSE_API_KEY }}
+          FRED_API_KEY: ${{ secrets.FRED_API_KEY }}
         run: |
           python free_gex_engine.py
 
@@ -33,8 +37,17 @@ jobs:
         env:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          FRED_API_KEY: ${{ secrets.FRED_API_KEY }}
+          LSE_API_KEY: ${{ secrets.LSE_API_KEY }}
         run: |
-          python telegram_engine.py || true
+          python telegram_engine.py
+
+      - name: Execute Jev Autonomous Paper Trading Engine
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+        run: |
+          python jev_paper_engine.py
 
       - name: Pull Latest Changes
         run: |
@@ -45,6 +58,6 @@ jobs:
       - name: Commit and Push Clean Telemetry
         uses: stefanzweifel/git-auto-commit-action@v4
         with:
-          commit_message: "auto: update live GEX corridors and clean institutional telemetry"
+          commit_message: "auto: sync live GEX corridors and Jev paper ledger"
           branch: main
           
