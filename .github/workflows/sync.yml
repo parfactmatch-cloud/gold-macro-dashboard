@@ -53,11 +53,13 @@ jobs:
         run: |
           git config --global user.name "github-actions[bot]"
           git config --global user.email "github-actions[bot]@users.noreply.github.com"
+          git stash || true
           git pull origin main --rebase || true
+          git stash pop || true
 
       - name: Commit and Push Clean Telemetry
         uses: stefanzweifel/git-auto-commit-action@v4
         with:
-          commit_message: "auto: sync live GEX corridors and Jev paper ledger"
+          commit_message: "auto: sync live GEX corridors, Order Flow and Jev paper ledger"
           branch: main
           
