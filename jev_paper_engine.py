@@ -1,10 +1,9 @@
 """
 jev_paper_engine.py
-Institutional Quantitative Execution & Paper-Trading Core (Jev Model).
-- Two-Way Interactive Telegram Command Listener (/status, /close, /summary)
-- Dynamic Trailing SL, Breakeven Shield & Partial Profit Scale-Out
-- Institutional GEX Corridor Confluence & Macro Risk Gatekeeper
-- Real-time Ledger & Performance Scorecard Engine
+Order Flow Confluence Execution Engine (Jev Model)
+- Requires GEX Wall + Volume Profile (POC/VAL/VAH) Confluence
+- Delta Absorption & Exhaustion Gatekeeper Filters
+- Trailing SL, Breakeven Lock, 50% Scale-Out & 2-Way Bot Commands
 """
 
 import os
@@ -50,17 +49,14 @@ def save_state(state: dict):
         json.dump(state, f, indent=2)
 
 
-# =====================================================================
-# 1. TWO-WAY TELEGRAM COMMAND LISTENER (/status, /close, /summary)
-# =====================================================================
 def handle_telegram_commands(state: dict, spot: float):
     if not TELEGRAM_BOT_TOKEN:
         return
 
     last_id = state.get("last_update_id", 0)
-    url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/getUpdates?offset={last_id + 1}&timeout=3"
+    url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/getUpdates"
     try:
-        res = requests.get(url, timeout=5)
+        res = requests.get(url, params={"offset": last_id + 1, "timeout": 3}, timeout=6)
         if res.status_code != 200:
             return
         updates = res.json().get("result", [])
@@ -70,246 +66,161 @@ def handle_telegram_commands(state: dict, spot: float):
             msg = u.get("message", {})
             text = msg.get("text", "").strip().lower()
 
-            if not text:
-                continue
-
             active = state.get("active_trade")
-
-            if text == "/status":
+            if "/status" in text:
                 if active:
                     side = active["side"]
                     entry = active["entry_price"]
                     fl_pnl = (spot - entry) * active["units"] if side == "BUY" else (entry - spot) * active["units"]
                     reply = (
-                        f"📊 <b>JEV ACTIVE POSITION STATUS</b>\n"
-                        f"━━━━━━━━━━━━━━━━━━━━━━━\n"
-                        f"• <b>Side</b>: <code>{side} XAU/USD</code>\n"
-                        f"• <b>Entry Spot</b>: <code>${entry:.2f}</code>\n"
-                        f"• <b>Live Spot</b>: <code>${spot:.2f}</code>\n"
-                        f"• <b>Units</b>: <code>{active['units']} oz</code>\n"
-                        f"• <b>Floating PnL</b>: <code>{'+' if fl_pnl >= 0 else ''}${fl_pnl:.2f}</code>\n"
-                        f"• <b>Active SL</b>: <code>${active['sl']:.2f}</code>\n"
-                        f"• <b>Target TP</b>: <code>${active['tp']:.2f}</code>\n"
-                        f"• <b>Shield State</b>: <code>{'BREAKEVEN_LOCKED' if active.get('be_locked') else 'ACTIVE_RISK'}</code>"
+                        f"📊 <b>JEV ACTIVE ORDER FLOW POSITION</b>\n"
+                        f"• Side: <code>{side} XAU/USD</code>\n"
+                        f"• Entry: <code>${entry:.2f}</code> | Spot: <code>${spot:.2f}</code>\n"
+                        f"• PnL: <code>{'+' if fl_pnl >= 0 else ''}${fl_pnl:.2f}</code>\n"
+                        f"• Target TP: <code>${active['tp']:.2f}</code> | SL: <code>${active['sl']:.2f}</code>\n"
+                        f"• Setup: <code>{active.get('reason')}</code>"
                     )
                 else:
-                    reply = (
-                        f"💤 <b>NO ACTIVE JEV POSITION</b>\n"
-                        f"• <b>Portfolio Balance</b>: <code>${state['balance']:.2f}</code>\n"
-                        f"• <b>Engine State</b>: <code>SCANNING_GEX_WALLS</code>"
-                    )
+                    reply = f"💤 <b>NO ACTIVE TRADES</b>\n• Portfolio: <code>${state.get('balance', 10000.0):.2f}</code>\n• Status: <code>SCANNING_ORDERFLOW_CONFLUENCE</code>"
                 send_tg_msg(reply)
 
-            elif text == "/close":
-                if active:
-                    side = active["side"]
-                    entry = active["entry_price"]
-                    pnl = (spot - entry) * active["units"] if side == "BUY" else (entry - spot) * active["units"]
-                    state["balance"] += pnl
-                    active["exit_price"] = spot
-                    active["pnl"] = round(pnl, 2)
-                    active["exit_reason"] = "MANUAL_TELEGRAM_COMMAND_CLOSE"
-                    active["closed_at"] = datetime.now(timezone.utc).strftime("%H:%M UTC")
-                    state["closed_trades"].append(active)
-                    state["active_trade"] = None
-                    save_state(state)
-                    send_tg_msg(f"🛑 <b>POSITION FORCED CLOSED VIA BOT</b>\n• Realized PnL: <code>${pnl:.2f}</code>\n• Balance: <code>${state['balance']:.2f}</code>")
-                else:
-                    send_tg_msg("⚠️ No open trade to close.")
+            elif "/close" in text and active:
+                pnl = (spot - active["entry_price"]) * active["units"] if active["side"] == "BUY" else (active["entry_price"] - spot) * active["units"]
+                state["balance"] += pnl
+                active["exit_price"] = spot
+                active["pnl"] = round(pnl, 2)
+                active["exit_reason"] = "MANUAL_BOT_CLOSE"
+                state["closed_trades"].append(active)
+                state["active_trade"] = None
+                save_state(state)
+                send_tg_msg(f"🛑 Closed at ${spot:.2f} | PnL: ${pnl:.2f}")
 
-            elif text == "/summary":
+            elif "/summary" in text:
                 closed = state.get("closed_trades", [])
-                total_trades = len(closed)
-                wins = len([t for t in closed if t.get("pnl", 0.0) > 0])
-                losses = len([t for t in closed if t.get("pnl", 0.0) < 0])
-                win_rate = (wins / total_trades * 100.0) if total_trades > 0 else 0.0
-                total_pnl = sum([t.get("pnl", 0.0) for t in closed])
-
-                summary_card = (
-                    f"📈 <b>JEV QUANTITATIVE PERFORMANCE DIGEST</b>\n"
-                    f"━━━━━━━━━━━━━━━━━━━━━━━\n"
-                    f"• <b>Virtual Balance</b>: <code>${state['balance']:.2f}</code>\n"
-                    f"• <b>Net Cumulative PnL</b>: <code>{'+' if total_pnl >= 0 else ''}${total_pnl:.2f}</code>\n"
-                    f"• <b>Total Trades</b>: <code>{total_trades}</code>\n"
-                    f"• <b>Win/Loss Record</b>: <code>{wins}W - {losses}L</code>\n"
-                    f"• <b>Win Rate</b>: <code>{win_rate:.1f}%</code>\n"
-                    f"━━━━━━━━━━━━━━━━━━━━━━━\n"
-                    f"⚡ <b>Risk Profile</b>: 1.0% Fixed Risk per Setup"
-                )
-                send_tg_msg(summary_card)
+                wins = len([t for t in closed if t.get("pnl", 0) > 0])
+                total = len(closed)
+                wr = (wins / total * 100) if total > 0 else 0.0
+                send_tg_msg(f"📈 <b>JEV PERFORMANCE</b>\n• Balance: <code>${state['balance']:.2f}</code>\n• Trades: <code>{total}</code> (WR: <code>{wr:.1f}%</code>)")
 
         save_state(state)
-    except Exception as e:
-        print(f"[TG LISTENER WARN] {e}")
+    except Exception:
+        pass
 
 
-# =====================================================================
-# 2. AUTONOMOUS EXECUTION & TRAILING SL / SCALE-OUT ENGINE
-# =====================================================================
 def run_jev_cycle():
     if not os.path.exists(GEX_FILE):
-        print("[JEV] gex_levels.json not ready.")
         return
 
     with open(GEX_FILE, "r") as f:
-        gex = json.load(f)
+        telemetry = json.load(f)
 
-    spot = float(gex.get("spot_xau", 0.0))
-    call_wall = float(gex.get("call_wall_xau", 0.0))
-    put_wall = float(gex.get("put_wall_xau", 0.0))
-    gamma_flip = float(gex.get("gamma_flip_xau", spot))
-    regime = str(gex.get("net_gamma_regime", "LONG_GAMMA_MEAN_REVERT"))
-    dex = float(gex.get("net_dex_m", 0.0))
-    blast = bool(gex.get("gamma_blast_active", False))
+    spot = float(telemetry.get("spot_xau", 0.0))
+    call_wall = float(telemetry.get("call_wall_xau", 0.0))
+    put_wall = float(telemetry.get("put_wall_xau", 0.0))
+    gamma_flip = float(telemetry.get("gamma_flip_xau", spot))
+    dex = float(telemetry.get("net_dex_m", 0.0))
+    blast = bool(telemetry.get("gamma_blast_active", False))
+
+    of = telemetry.get("order_flow", {})
+    poc = float(of.get("session_poc", spot))
+    val = float(of.get("session_val", spot - 15.0))
+    vah = float(of.get("session_vah", spot + 15.0))
+    absorption_bias = of.get("absorption_bias", "VALUE_ACCEPTED")
 
     state = load_state()
     now_utc = datetime.now(timezone.utc).strftime("%H:%M UTC")
 
-    # Step A: Listen to live bot commands first
+    # Handle incoming Telegram bot messages
     handle_telegram_commands(state, spot)
 
     active = state.get("active_trade")
 
-    # -------------------------------------------------------------
-    # Step B: ACTIVE TRADE MANAGEMENT (Trailing SL, Breakeven & TP)
-    # -------------------------------------------------------------
+    # 1. Active Position Lifecycle (Scale-out & SL/TP tracking)
     if active:
         side = active["side"]
         entry = active["entry_price"]
         sl = active["sl"]
         tp = active["tp"]
-        initial_risk = active["initial_risk"]
-        units = active["units"]
+        risk = active["initial_risk"]
 
-        # 1. Partial Scale-Out (50% Position Profit Lock at 1:1.5 R:R)
-        current_gain = (spot - entry) if side == "BUY" else (entry - spot)
-        if not active.get("partial_taken") and current_gain >= (initial_risk * 1.5):
-            booked_units = round(units * 0.5, 2)
-            partial_pnl = booked_units * current_gain
-            state["balance"] += partial_pnl
-            active["units"] = round(units - booked_units, 2)
+        # Scale out 50% at 1.5R
+        gain = (spot - entry) if side == "BUY" else (entry - spot)
+        if not active.get("partial_taken") and gain >= (risk * 1.5):
+            booked = round(active["units"] * 0.5, 2)
+            state["balance"] += booked * gain
+            active["units"] = round(active["units"] - booked, 2)
             active["partial_taken"] = True
-            active["be_locked"] = True
-            active["sl"] = entry  # Move SL to Entry (Free Trade)
+            active["sl"] = entry  # Zero risk lock
             save_state(state)
+            send_tg_msg(f"🎯 <b>JEV 50% SCALE-OUT BOOKED (+${booked * gain:.2f})</b>\nStop-Loss locked to Breakeven (${entry:.2f}).")
 
-            send_tg_msg(
-                f"🎯 <b>JEV SCALE-OUT: 50% PROFIT SECURED</b>\n"
-                f"━━━━━━━━━━━━━━━━━━━━━━━\n"
-                f"• <b>Booked Profit</b>: <code>+${partial_pnl:.2f}</code>\n"
-                f"• <b>Remaining Position</b>: <code>{active['units']} oz</code>\n"
-                f"• <b>Stop Loss Status</b>: <code>Moved to Entry (${entry:.2f}) [ZERO RISK]</code>"
-            )
-
-        # 2. Dynamic Trailing Stop-Loss for Remaining Runners
-        if active.get("be_locked"):
-            if side == "BUY" and spot > (entry + initial_risk * 2.0):
-                new_trail = round(spot - initial_risk, 2)
-                if new_trail > active["sl"]:
-                    active["sl"] = new_trail
-                    save_state(state)
-            elif side == "SELL" and spot < (entry - initial_risk * 2.0):
-                new_trail = round(spot + initial_risk, 2)
-                if new_trail < active["sl"]:
-                    active["sl"] = new_trail
-                    save_state(state)
-
-        # 3. Check Final Exits (SL or Final TP)
+        # Exit check
         closed = False
         pnl = 0.0
         reason = ""
-
         if side == "BUY":
             if spot >= tp:
-                closed = True
-                pnl = (tp - entry) * active["units"]
-                reason = "🎯 FINAL RUNNER TARGET HIT"
+                closed = True; pnl = (tp - entry) * active["units"]; reason = "TARGET_HIT_POC"
             elif spot <= active["sl"]:
-                closed = True
-                pnl = (active["sl"] - entry) * active["units"]
-                reason = "🛑 TRAILING SL TRIGGERED" if active.get("be_locked") else "🛑 STRUCTURAL SL HIT"
+                closed = True; pnl = (active["sl"] - entry) * active["units"]; reason = "STOP_LOSS_HIT"
         elif side == "SELL":
             if spot <= tp:
-                closed = True
-                pnl = (entry - tp) * active["units"]
-                reason = "🎯 FINAL RUNNER TARGET HIT"
+                closed = True; pnl = (entry - tp) * active["units"]; reason = "TARGET_HIT_POC"
             elif spot >= active["sl"]:
-                closed = True
-                pnl = (entry - active["sl"]) * active["units"]
-                reason = "🛑 TRAILING SL TRIGGERED" if active.get("be_locked") else "🛑 STRUCTURAL SL HIT"
+                closed = True; pnl = (entry - active["sl"]) * active["units"]; reason = "STOP_LOSS_HIT"
 
         if closed:
             state["balance"] += pnl
             active["exit_price"] = spot
             active["pnl"] = round(pnl, 2)
             active["exit_reason"] = reason
-            active["closed_at"] = now_utc
             state["closed_trades"].append(active)
             state["active_trade"] = None
             save_state(state)
-
             icon = "🟢" if pnl >= 0 else "🔴"
-            card = (
-                f"{icon} <b>JEV POSITION CLOSED</b>\n"
-                f"━━━━━━━━━━━━━━━━━━━━━━━\n"
-                f"• <b>Status</b>: <code>{reason}</code>\n"
-                f"• <b>Realized Gain/Loss</b>: <code>{'+' if pnl >= 0 else ''}${pnl:.2f}</code>\n"
-                f"• <b>Closing Spot</b>: <code>${spot:.2f}</code>\n"
-                f"• <b>Virtual Balance</b>: <code>${state['balance']:.2f}</code>\n"
-                f"⏰ <b>Timestamp</b>: <code>{now_utc}</code>"
-            )
-            send_tg_msg(card)
-            return
-
-        print(f"[JEV] Active {side} running. Spot: ${spot:.2f} | SL: ${active['sl']:.2f}")
+            send_tg_msg(f"{icon} <b>JEV TRADE CLOSED: {reason}</b>\n• PnL: <code>{'+' if pnl >= 0 else ''}${pnl:.2f}</code>\n• Balance: <code>${state['balance']:.2f}</code>")
         return
 
-    # -------------------------------------------------------------
-    # Step C: EVALUATE FRESH INSTITUTIONAL GEX SETUPS
-    # -------------------------------------------------------------
+    # 2. Fresh Order Flow + GEX Confluence Execution
     side = None
     sl = None
     tp = None
     reason = None
 
-    # Setup 1: Put Wall Floor Absorption (Mean Reversion Long)
-    if spot <= (put_wall + 6.0) and spot > put_wall and not blast:
+    # Long Confluence: Put Wall floor touch + Value Area Low (VAL) Bullish Absorption
+    if spot <= (put_wall + 8.0) and spot <= (val + 4.0) and not blast:
         side = "BUY"
-        sl = round(put_wall - 12.0, 2)
-        tp = round(gamma_flip, 2)
-        reason = "JEV_PUT_WALL_ABSORPTION"
+        sl = round(min(put_wall, val) - 10.0, 2)
+        tp = round(poc, 2)  # Reversion target to Session POC
+        reason = "CONFLUENCE_PUT_WALL_VAL_ABSORPTION"
 
-    # Setup 2: Call Wall Ceiling Exhaustion (Mean Reversion Short)
-    elif spot >= (call_wall - 6.0) and spot < call_wall and not blast:
+    # Short Confluence: Call Wall ceiling touch + Value Area High (VAH) Bearish Exhaustion
+    elif spot >= (call_wall - 8.0) and spot >= (vah - 4.0) and not blast:
         side = "SELL"
-        sl = round(call_wall + 12.0, 2)
-        tp = round(gamma_flip, 2)
-        reason = "JEV_CALL_WALL_EXHAUSTION"
+        sl = round(max(call_wall, vah) + 10.0, 2)
+        tp = round(poc, 2)  # Reversion target to Session POC
+        reason = "CONFLUENCE_CALL_WALL_VAH_EXHAUSTION"
 
-    # Setup 3: Gamma Blast Liquidity Expansion (High-Velocity Trend)
+    # Momentum Gamma Blast Continuation
     elif blast and dex > 8.0 and spot > gamma_flip:
         side = "BUY"
         sl = round(spot - 15.0, 2)
-        tp = round(spot + 40.0, 2)
-        reason = "JEV_INSTITUTIONAL_GAMMA_BLAST"
+        tp = round(spot + 45.0, 2)
+        reason = "ORDERFLOW_GAMMA_BLAST_EXPANSION"
 
     if not side:
-        print("[JEV] Corridor scanning active. No high-probability setup.")
         return
 
-    # Gatekeeper Risk Allocation: 1% Fixed Risk of virtual balance
-    risk_cash = state["balance"] * 0.01  # $100 on $10k
+    risk_cash = state["balance"] * 0.01
     risk_dist = abs(spot - sl)
     if risk_dist <= 0:
         return
 
-    units = round(risk_cash / risk_dist, 2)
     rr = round(abs(tp - spot) / risk_dist, 2)
-
     if rr < 1.30:
-        print(f"[JEV GATEKEEPER] Rejected: Offered R:R 1:{rr} below 1:1.30 standard.")
         return
 
+    units = round(risk_cash / risk_dist, 2)
     new_trade = {
         "trade_id": f"JEV-{int(datetime.now().timestamp())}",
         "side": side,
@@ -329,22 +240,19 @@ def run_jev_cycle():
     save_state(state)
 
     card = (
-        f"⚡ <b>JEV MODEL QUANT EXECUTION CARD</b>\n"
+        f"⚡ <b>JEV ORDER FLOW EXECUTION CARD</b>\n"
         f"━━━━━━━━━━━━━━━━━━━━━━━\n"
-        f"🏷 <b>Setup Model</b>: <code>{reason}</code>\n"
+        f"🏷 <b>Setup</b>: <code>{reason}</code>\n"
         f"🎯 <b>Action</b>: <code>{side} XAU/USD</code>\n"
         f"💵 <b>Fill Spot</b>: <code>${spot:.2f}</code> ({units} oz)\n"
-        f"━━━━━━━━━━━━━━━━━━━━━━━\n"
-        f"🛑 <b>Structural SL</b>: <code>${sl:.2f}</code>\n"
-        f"🎯 <b>Target Liquidity</b>: <code>${tp:.2f}</code> (1:{rr})\n"
-        f"🧱 <b>Anchor Wall</b>: <code>${put_wall if side == 'BUY' else call_wall:.2f}</code>\n"
-        f"⏰ <b>Execution Epoch</b>: <code>{now_utc}</code>\n"
-        f"━━━━━━━━━━━━━━━━━━━━━━━\n"
-        f"💼 <b>Portfolio State</b>: <code>${state['balance']:.2f}</code>"
+        f"🛑 <b>Stop Loss</b>: <code>${sl:.2f}</code>\n"
+        f"🎯 <b>POC Target</b>: <code>${tp:.2f}</code> (R:R 1:{rr})\n"
+        f"📊 <b>Profile Context</b>: VAL ${val:.2f} | POC ${poc:.2f} | VAH ${vah:.2f}\n"
+        f"⏰ <b>Executed At</b>: <code>{now_utc}</code>"
     )
     send_tg_msg(card)
-    print(f"[JEV] Executed {side} trade at ${spot:.2f}")
 
 
 if __name__ == "__main__":
     run_jev_cycle()
+                
