@@ -1,9 +1,9 @@
 """
 jev_paper_engine.py
 Order Flow Confluence Execution Engine (Jev Model)
-- Requires GEX Wall + Volume Profile (POC/VAL/VAH) Confluence
-- Delta Absorption & Exhaustion Gatekeeper Filters
-- Trailing SL, Breakeven Lock, 50% Scale-Out & 2-Way Bot Commands
+- Integrated with Kronos K-Line Foundation Model Neural Gatekeeper
+- Confluence: GEX Walls + Volume Profile (POC/VAL/VAH) + Kronos AI Bias
+- Trailing SL, Breakeven Lock, 50% Scale-Out & 2-Way Interactive Bot Commands
 """
 
 import os
@@ -14,6 +14,7 @@ from datetime import datetime, timezone
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 GEX_FILE = os.path.join(SCRIPT_DIR, "gex_levels.json")
 TRADES_FILE = os.path.join(SCRIPT_DIR, "paper_trades.json")
+KRONOS_FILE = os.path.join(SCRIPT_DIR, "kronos_signal.json")
 
 TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN", "").strip()
 TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID", "").strip()
@@ -78,10 +79,15 @@ def handle_telegram_commands(state: dict, spot: float):
                         f"• Entry: <code>${entry:.2f}</code> | Spot: <code>${spot:.2f}</code>\n"
                         f"• PnL: <code>{'+' if fl_pnl >= 0 else ''}${fl_pnl:.2f}</code>\n"
                         f"• Target TP: <code>${active['tp']:.2f}</code> | SL: <code>${active['sl']:.2f}</code>\n"
+                        f"• Neural AI Score: <code>{active.get('kronos_score', 'N/A')}</code>\n"
                         f"• Setup: <code>{active.get('reason')}</code>"
                     )
                 else:
-                    reply = f"💤 <b>NO ACTIVE TRADES</b>\n• Portfolio: <code>${state.get('balance', 10000.0):.2f}</code>\n• Status: <code>SCANNING_ORDERFLOW_CONFLUENCE</code>"
+                    reply = (
+                        f"💤 <b>NO ACTIVE TRADES</b>\n"
+                        f"• Portfolio: <code>${state.get('balance', 10000.0):.2f}</code>\n"
+                        f"• Status: <code>SCANNING_GEX_KRONOS_CONFLUENCE</code>"
+                    )
                 send_tg_msg(reply)
 
             elif "/close" in text and active:
@@ -100,7 +106,13 @@ def handle_telegram_commands(state: dict, spot: float):
                 wins = len([t for t in closed if t.get("pnl", 0) > 0])
                 total = len(closed)
                 wr = (wins / total * 100) if total > 0 else 0.0
-                send_tg_msg(f"📈 <b>JEV PERFORMANCE</b>\n• Balance: <code>${state['balance']:.2f}</code>\n• Trades: <code>{total}</code> (WR: <code>{wr:.1f}%</code>)")
+                total_pnl = sum([t.get("pnl", 0.0) for t in closed])
+                send_tg_msg(
+                    f"📈 <b>JEV QUANTITATIVE PERFORMANCE</b>\n"
+                    f"• Balance: <code>${state['balance']:.2f}</code>\n"
+                    f"• Cumulative PnL: <code>{'+' if total_pnl >= 0 else ''}${total_pnl:.2f}</code>\n"
+                    f"• Total Trades: <code>{total}</code> (WR: <code>{wr:.1f}%</code>)"
+                )
 
         save_state(state)
     except Exception:
@@ -125,12 +137,23 @@ def run_jev_cycle():
     poc = float(of.get("session_poc", spot))
     val = float(of.get("session_val", spot - 15.0))
     vah = float(of.get("session_vah", spot + 15.0))
-    absorption_bias = of.get("absorption_bias", "VALUE_ACCEPTED")
+
+    # Ingest Kronos Foundation Model Signals
+    kronos_bull_prob = 0.50
+    kronos_regime = "NEUTRAL"
+    if os.path.exists(KRONOS_FILE):
+        try:
+            with open(KRONOS_FILE, "r") as kf:
+                kdata = json.load(kf)
+                kronos_bull_prob = float(kdata.get("bullish_probability", 0.50))
+                kronos_regime = kdata.get("predicted_regime", "NEUTRAL")
+        except Exception:
+            pass
 
     state = load_state()
     now_utc = datetime.now(timezone.utc).strftime("%H:%M UTC")
 
-    # Handle incoming Telegram bot messages
+    # Handle incoming Telegram commands
     handle_telegram_commands(state, spot)
 
     active = state.get("active_trade")
@@ -143,18 +166,18 @@ def run_jev_cycle():
         tp = active["tp"]
         risk = active["initial_risk"]
 
-        # Scale out 50% at 1.5R
+        # Scale out 50% at 1.5R & move Stop-Loss to Breakeven
         gain = (spot - entry) if side == "BUY" else (entry - spot)
         if not active.get("partial_taken") and gain >= (risk * 1.5):
             booked = round(active["units"] * 0.5, 2)
             state["balance"] += booked * gain
             active["units"] = round(active["units"] - booked, 2)
             active["partial_taken"] = True
-            active["sl"] = entry  # Zero risk lock
+            active["sl"] = entry
             save_state(state)
             send_tg_msg(f"🎯 <b>JEV 50% SCALE-OUT BOOKED (+${booked * gain:.2f})</b>\nStop-Loss locked to Breakeven (${entry:.2f}).")
 
-        # Exit check
+        # Settlement check
         closed = False
         pnl = 0.0
         reason = ""
@@ -181,24 +204,24 @@ def run_jev_cycle():
             send_tg_msg(f"{icon} <b>JEV TRADE CLOSED: {reason}</b>\n• PnL: <code>{'+' if pnl >= 0 else ''}${pnl:.2f}</code>\n• Balance: <code>${state['balance']:.2f}</code>")
         return
 
-    # 2. Fresh Order Flow + GEX Confluence Execution
+    # 2. Confluence Setup Identification
     side = None
     sl = None
     tp = None
     reason = None
 
-    # Long Confluence: Put Wall floor touch + Value Area Low (VAL) Bullish Absorption
+    # Long Confluence: Put Wall floor touch + VAL absorption
     if spot <= (put_wall + 8.0) and spot <= (val + 4.0) and not blast:
         side = "BUY"
         sl = round(min(put_wall, val) - 10.0, 2)
-        tp = round(poc, 2)  # Reversion target to Session POC
+        tp = round(poc, 2)
         reason = "CONFLUENCE_PUT_WALL_VAL_ABSORPTION"
 
-    # Short Confluence: Call Wall ceiling touch + Value Area High (VAH) Bearish Exhaustion
+    # Short Confluence: Call Wall ceiling touch + VAH exhaustion
     elif spot >= (call_wall - 8.0) and spot >= (vah - 4.0) and not blast:
         side = "SELL"
         sl = round(max(call_wall, vah) + 10.0, 2)
-        tp = round(poc, 2)  # Reversion target to Session POC
+        tp = round(poc, 2)
         reason = "CONFLUENCE_CALL_WALL_VAH_EXHAUSTION"
 
     # Momentum Gamma Blast Continuation
@@ -211,7 +234,27 @@ def run_jev_cycle():
     if not side:
         return
 
-    risk_cash = state["balance"] * 0.01
+    # 3. Kronos Neural Gatekeeper Filter
+    # Long rejected if Kronos detects strong Bearish Dump (Bull prob < 0.40)
+    if side == "BUY" and kronos_bull_prob < 0.40:
+        print(f"[JEV GATEKEEPER] BUY Setup rejected: Kronos Bearish Dump ({kronos_bull_prob:.2f})")
+        return
+
+    # Short rejected if Kronos detects strong Bullish Expansion (Bull prob > 0.60)
+    if side == "SELL" and kronos_bull_prob > 0.60:
+        print(f"[JEV GATEKEEPER] SELL Setup rejected: Kronos Bullish Rally ({kronos_bull_prob:.2f})")
+        return
+
+    # 4. Probabilistic Risk Sizing via Kronos Confidence
+    base_risk = 0.010  # 1.0% base risk
+    if (side == "BUY" and kronos_bull_prob >= 0.70) or (side == "SELL" and kronos_bull_prob <= 0.30):
+        risk_pct = 0.015  # 1.5% high conviction sizing
+    elif 0.45 <= kronos_bull_prob <= 0.55:
+        risk_pct = 0.0075  # 0.75% chop/noise sizing
+    else:
+        risk_pct = base_risk
+
+    risk_cash = state["balance"] * risk_pct
     risk_dist = abs(spot - sl)
     if risk_dist <= 0:
         return
@@ -231,6 +274,7 @@ def run_jev_cycle():
         "tp": tp,
         "rr": rr,
         "reason": reason,
+        "kronos_score": f"{kronos_regime} ({kronos_bull_prob:.2f})",
         "be_locked": False,
         "partial_taken": False,
         "opened_at": now_utc
@@ -240,13 +284,14 @@ def run_jev_cycle():
     save_state(state)
 
     card = (
-        f"⚡ <b>JEV ORDER FLOW EXECUTION CARD</b>\n"
+        f"⚡ <b>JEV INSTITUTIONAL EXECUTION CARD</b>\n"
         f"━━━━━━━━━━━━━━━━━━━━━━━\n"
         f"🏷 <b>Setup</b>: <code>{reason}</code>\n"
         f"🎯 <b>Action</b>: <code>{side} XAU/USD</code>\n"
-        f"💵 <b>Fill Spot</b>: <code>${spot:.2f}</code> ({units} oz)\n"
+        f"💵 <b>Fill Spot</b>: <code>${spot:.2f}</code> ({units} oz | {risk_pct*100:.2f}% Risk)\n"
         f"🛑 <b>Stop Loss</b>: <code>${sl:.2f}</code>\n"
-        f"🎯 <b>POC Target</b>: <code>${tp:.2f}</code> (R:R 1:{rr})\n"
+        f"🎯 <b>Target POC</b>: <code>${tp:.2f}</code> (R:R 1:{rr})\n"
+        f"🧠 <b>Kronos Neural Gate</b>: <code>{kronos_regime} ({kronos_bull_prob:.2f})</code>\n"
         f"📊 <b>Profile Context</b>: VAL ${val:.2f} | POC ${poc:.2f} | VAH ${vah:.2f}\n"
         f"⏰ <b>Executed At</b>: <code>{now_utc}</code>"
     )
@@ -255,4 +300,3 @@ def run_jev_cycle():
 
 if __name__ == "__main__":
     run_jev_cycle()
-                
