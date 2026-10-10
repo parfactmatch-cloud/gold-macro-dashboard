@@ -24,6 +24,9 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           python -m pip install pandas numpy scipy yfinance requests
+          # Install lightweight CPU-only PyTorch & transformers dependencies for Kronos
+          python -m pip install torch torchvision --index-url https://download.pytorch.org/whl/cpu
+          python -m pip install einops huggingface_hub
 
       - name: Compute Live Black-Scholes GEX Levels
         env:
@@ -33,6 +36,17 @@ jobs:
         run: |
           python free_gex_engine.py
 
+      - name: Run Kronos K-Line Neural Inference
+        run: |
+          python kronos_gatekeeper.py
+
+      - name: Execute Jev Autonomous Paper Trading Engine
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+        run: |
+          python jev_paper_engine.py
+
       - name: Run Live Institutional Radar & Telegram Bot
         env:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
@@ -41,13 +55,6 @@ jobs:
           LSE_API_KEY: ${{ secrets.LSE_API_KEY }}
         run: |
           python telegram_engine.py
-
-      - name: Execute Jev Autonomous Paper Trading Engine
-        env:
-          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
-          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
-        run: |
-          python jev_paper_engine.py
 
       - name: Pull Latest Changes
         run: |
@@ -60,6 +67,5 @@ jobs:
       - name: Commit and Push Clean Telemetry
         uses: stefanzweifel/git-auto-commit-action@v4
         with:
-          commit_message: "auto: sync live GEX corridors, Order Flow and Jev paper ledger"
+          commit_message: "auto: sync live GEX corridors, Order Flow, Kronos AI, and Jev ledger"
           branch: main
-          
