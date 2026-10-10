@@ -1,10 +1,9 @@
 """
 telegram_engine.py
-Institutional Macro Telemetry, Kronos Neural AI & Actionable Playbook Dual-Broadcaster
-- Message 1: Original Institutional Market Radar Pulse (Untouched format)
-- Message 2: Dedicated Actionable Institutional Playbook (What To Do + Kronos AI Bias)
+Institutional Macro Telemetry, Kronos Neural AI & Full Telegram Command Center
+- Supported Commands: /levels, /pause, /resume, /pnl, /summary, /kronos, /ai
+- Dual Broadcaster: Radar Pulse + Actionable Playbook (with Kronos AI Bias)
 - Event Trigger: Kronos AI Regime Shift Alert (Chop -> Expansion)
-- Interactive Commands: /kronos & /ai
 """
 
 import os
@@ -16,6 +15,8 @@ SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 GEX_FILE = os.path.join(SCRIPT_DIR, "gex_levels.json")
 KRONOS_FILE = os.path.join(SCRIPT_DIR, "kronos_signal.json")
 KRONOS_STATE_FILE = os.path.join(SCRIPT_DIR, "kronos_state.json")
+TRADES_FILE = os.path.join(SCRIPT_DIR, "paper_trades.json")
+CONTROL_FILE = os.path.join(SCRIPT_DIR, "bot_control.json")
 
 TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN", "").strip()
 TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID", "").strip()
@@ -41,6 +42,21 @@ def send_tg_msg(text: str):
         print(f"[TG POST ERROR] {e}")
 
 
+def load_control_state() -> dict:
+    if os.path.exists(CONTROL_FILE):
+        try:
+            with open(CONTROL_FILE, "r") as f:
+                return json.load(f)
+        except Exception:
+            pass
+    return {"is_paused": False, "last_update_id": 0}
+
+
+def save_control_state(state: dict):
+    with open(CONTROL_FILE, "w") as f:
+        json.dump(state, f, indent=2)
+
+
 def fetch_fred_yield() -> tuple[float, str]:
     if not FRED_API_KEY:
         return 5.25, "BEARISH_PRESSURE"
@@ -58,6 +74,110 @@ def fetch_fred_yield() -> tuple[float, str]:
     except Exception:
         pass
     return 5.25, "BEARISH_PRESSURE"
+
+
+def handle_all_telegram_commands(gex_data: dict, kronos_data: dict):
+    """Processes interactive commands sent by user in Telegram."""
+    if not TELEGRAM_BOT_TOKEN:
+        return
+
+    ctrl = load_control_state()
+    last_id = ctrl.get("last_update_id", 0)
+
+    url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/getUpdates"
+    try:
+        res = requests.get(url, params={"offset": last_id + 1, "timeout": 3}, timeout=6)
+        if res.status_code != 200:
+            return
+        updates = res.json().get("result", [])
+
+        for u in updates:
+            ctrl["last_update_id"] = u["update_id"]
+            msg = u.get("message", {})
+            text = msg.get("text", "").strip().lower()
+
+            spot = float(gex_data.get("spot_xau", 0.0))
+            call_wall = float(gex_data.get("call_wall_xau", 0.0))
+            put_wall = float(gex_data.get("put_wall_xau", 0.0))
+            gamma_flip = float(gex_data.get("gamma_flip_xau", 0.0))
+            of = gex_data.get("order_flow", {})
+            poc = float(of.get("session_poc", spot))
+            vah = float(of.get("session_vah", spot + 15.0))
+            val = float(of.get("session_val", spot - 15.0))
+
+            # Command: /levels
+            if text == "/levels":
+                reply = (
+                    f"📐 <b>QUANTITATIVE LEVELS SNAPSHOT</b>\n"
+                    f"━━━━━━━━━━━━━━━━━━━━━━━\n"
+                    f"💵 <b>Current Spot</b>: <code>${spot:.2f}</code>\n"
+                    f"🧱 <b>Call Wall (Ceiling)</b>: <code>${call_wall:.2f}</code> (+${call_wall - spot:.2f})\n"
+                    f"🧱 <b>Put Wall (Floor)</b>: <code>${put_wall:.2f}</code> (-${spot - put_wall:.2f})\n"
+                    f"⚡ <b>Gamma Flip Level</b>: <code>${gamma_flip:.2f}</code>\n"
+                    f"━━━━━━━━━━━━━━━━━━━━━━━\n"
+                    f"📊 <b>Volume Profile Cluster</b>:\n"
+                    f"• <b>VAH (High)</b>: <code>${vah:.2f}</code>\n"
+                    f"• <b>POC (Magnet)</b>: <code>${poc:.2f}</code>\n"
+                    f"• <b>VAL (Low)</b>: <code>${val:.2f}</code>"
+                )
+                send_tg_msg(reply)
+
+            # Command: /pause
+            elif text == "/pause":
+                ctrl["is_paused"] = True
+                save_control_state(ctrl)
+                send_tg_msg("🛑 <b>BOT EXECUTION PAUSED</b>\nFresh trades suspended. Active positions will still be managed.")
+
+            # Command: /resume
+            elif text == "/resume":
+                ctrl["is_paused"] = False
+                save_control_state(ctrl)
+                send_tg_msg("🟢 <b>BOT EXECUTION RESUMED</b>\nAutonomous trade gatekeeper is active.")
+
+            # Command: /pnl or /summary
+            elif text in ["/pnl", "/summary"]:
+                trades_data = {"balance": 10000.0, "closed_trades": []}
+                if os.path.exists(TRADES_FILE):
+                    try:
+                        with open(TRADES_FILE, "r") as tf:
+                            trades_data = json.load(tf)
+                    except Exception:
+                        pass
+                closed = trades_data.get("closed_trades", [])
+                wins = len([t for t in closed if t.get("pnl", 0) > 0])
+                losses = len([t for t in closed if t.get("pnl", 0) < 0])
+                total = len(closed)
+                wr = (wins / total * 100) if total > 0 else 0.0
+                total_pnl = sum([t.get("pnl", 0.0) for t in closed])
+                reply = (
+                    f"📊 <b>JEV PERFORMANCE & RISK LEDGER</b>\n"
+                    f"━━━━━━━━━━━━━━━━━━━━━━━\n"
+                    f"💰 <b>Portfolio Balance</b>: <code>${trades_data.get('balance', 10000.0):.2f}</code>\n"
+                    f"📈 <b>Cumulative PnL</b>: <code>{'+' if total_pnl >= 0 else ''}${total_pnl:.2f}</code>\n"
+                    f"🎯 <b>Win Rate</b>: <code>{wr:.1f}%</code> ({wins}W / {losses}L)\n"
+                    f"📦 <b>Total Trades Closed</b>: <code>{total}</code>\n"
+                    f"⚙️ <b>Engine Status</b>: <code>{'PAUSED' if ctrl.get('is_paused') else 'RUNNING_ACTIVE'}</code>"
+                )
+                send_tg_msg(reply)
+
+            # Command: /kronos or /ai
+            elif text in ["/kronos", "/ai"]:
+                k_regime = kronos_data.get("predicted_regime", "CHOP_CONSOLIDATION")
+                k_prob = float(kronos_data.get("bullish_probability", 0.50))
+                reply = (
+                    f"🤖 <b>KRONOS NEURAL STATUS REPORT</b>\n"
+                    f"━━━━━━━━━━━━━━━━━━━━━━━\n"
+                    f"• <b>Evaluated Window</b>: 64 Bars (5M Timeframe)\n"
+                    f"• <b>Predicted Regime</b>: <code>{k_regime}</code>\n"
+                    f"• <b>Bullish Probability</b>: <code>{k_prob*100:.1f}%</code>\n"
+                    f"• <b>Bearish Probability</b>: <code>{(1.0-k_prob)*100:.1f}%</code>\n"
+                    f"• <b>Gatekeeper Filter</b>: <code>{'🛡️ ACTIVE' if 0.42 <= k_prob <= 0.58 else '⚡ PERMISSIVE'}</code>"
+                )
+                send_tg_msg(reply)
+
+        save_control_state(ctrl)
+    except Exception as e:
+        print(f"[TG DISPATCH ERROR] {e}")
 
 
 def format_original_radar_card(spot: float, data_source: str, us10y: float, yield_bias: str,
@@ -153,34 +273,6 @@ def handle_kronos_regime_shift(current_regime: str, bull_prob: float):
         json.dump({"last_regime": current_regime}, f, indent=2)
 
 
-def handle_ai_interactive_commands(kronos_regime: str, bull_prob: float):
-    """Responds to /kronos or /ai commands."""
-    if not TELEGRAM_BOT_TOKEN:
-        return
-    url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/getUpdates"
-    try:
-        res = requests.get(url, params={"timeout": 2}, timeout=5)
-        if res.status_code != 200:
-            return
-        updates = res.json().get("result", [])
-        for u in updates:
-            text = u.get("message", {}).get("text", "").strip().lower()
-            if text in ["/kronos", "/ai"]:
-                reply = (
-                    f"🤖 <b>KRONOS NEURAL STATUS REPORT</b>\n"
-                    f"━━━━━━━━━━━━━━━━━━━━━━━\n"
-                    f"• <b>Evaluated Window</b>: 64 Bars (5M Timeframe)\n"
-                    f"• <b>Predicted Regime</b>: <code>{kronos_regime}</code>\n"
-                    f"• <b>Bullish Probability</b>: <code>{bull_prob*100:.1f}%</code>\n"
-                    f"• <b>Bearish Probability</b>: <code>{(1.0-bull_prob)*100:.1f}%</code>\n"
-                    f"• <b>Gatekeeper Filter</b>: <code>{'🛡️ ACTIVE' if 0.42 <= bull_prob <= 0.58 else '⚡ PERMISSIVE'}</code>"
-                )
-                send_tg_msg(reply)
-                break
-    except Exception:
-        pass
-
-
 def main():
     if not os.path.exists(GEX_FILE):
         print(f"[TG ENGINE] {GEX_FILE} not found.")
@@ -188,6 +280,17 @@ def main():
 
     with open(GEX_FILE, "r") as f:
         data = json.load(f)
+
+    kronos_data = {"predicted_regime": "CHOP_CONSOLIDATION", "bullish_probability": 0.50}
+    if os.path.exists(KRONOS_FILE):
+        try:
+            with open(KRONOS_FILE, "r") as kf:
+                kronos_data = json.load(kf)
+        except Exception:
+            pass
+
+    # Process all incoming remote commands (/levels, /pause, /resume, /pnl, /summary, /kronos, /ai)
+    handle_all_telegram_commands(data, kronos_data)
 
     spot = float(data.get("spot_xau", 0.0))
     data_source = data.get("data_source", "UNKNOWN")
@@ -198,21 +301,10 @@ def main():
     regime = data.get("net_gamma_regime", "LONG_GAMMA_MEAN_REVERT")
     sync_time = data.get("timestamp_utc", datetime.now(timezone.utc).strftime("%H:%M UTC | %d %b %Y"))
 
-    kronos_regime = "CHOP_CONSOLIDATION"
-    kronos_prob = 0.50
-    if os.path.exists(KRONOS_FILE):
-        try:
-            with open(KRONOS_FILE, "r") as kf:
-                kdata = json.load(kf)
-                kronos_regime = kdata.get("predicted_regime", "CHOP_CONSOLIDATION")
-                kronos_prob = float(kdata.get("bullish_probability", 0.50))
-        except Exception:
-            pass
+    kronos_regime = kronos_data.get("predicted_regime", "CHOP_CONSOLIDATION")
+    kronos_prob = float(kronos_data.get("bullish_probability", 0.50))
 
-    # Check for /kronos commands
-    handle_ai_interactive_commands(kronos_regime, kronos_prob)
-
-    # Check for regime shift transition
+    # Detect & alert if Kronos changed regime
     handle_kronos_regime_shift(kronos_regime, kronos_prob)
 
     us10y_yield, yield_bias = fetch_fred_yield()
@@ -224,7 +316,7 @@ def main():
     call_dist = round(call_wall - spot, 2)
     put_dist = round(spot - put_wall, 2)
 
-    # 1. Send the untouched original pulse card first
+    # 1. Send untouched original pulse card first
     original_pulse = format_original_radar_card(
         spot, data_source, us10y_yield, yield_bias,
         regime_str, dex, dex_color, dex_label,
@@ -233,11 +325,11 @@ def main():
     )
     send_tg_msg(original_pulse)
 
-    # 2. Send the detailed actionable playbook with Kronos neural bias
+    # 2. Send detailed actionable playbook with Kronos neural bias
     playbook = format_actionable_playbook(spot, call_wall, put_wall, gamma_flip, dex, kronos_regime, kronos_prob)
     send_tg_msg(playbook)
 
-    print("[TG ENGINE] Radar Pulse, Playbook, and Kronos monitors executed.")
+    print("[TG ENGINE] Radar Pulse, Playbook, Kronos monitors, and Command Dispatch executed.")
 
 
 if __name__ == "__main__":
