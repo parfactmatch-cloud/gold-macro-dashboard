@@ -2,6 +2,7 @@
 jev_paper_engine.py
 Order Flow Confluence Execution Engine (Jev Model)
 - Integrated with Kronos K-Line Foundation Model Neural Gatekeeper
+- Integrated with High-Impact Macro Economic News Blackout Gatekeeper
 - Confluence: GEX Walls + Volume Profile (POC/VAL/VAH) + Kronos AI Bias
 - Trailing SL, Breakeven Lock, 50% Scale-Out & 2-Way Interactive Bot Commands
 """
@@ -15,6 +16,7 @@ SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 GEX_FILE = os.path.join(SCRIPT_DIR, "gex_levels.json")
 TRADES_FILE = os.path.join(SCRIPT_DIR, "paper_trades.json")
 KRONOS_FILE = os.path.join(SCRIPT_DIR, "kronos_signal.json")
+NEWS_FILE = os.path.join(SCRIPT_DIR, "news_status.json")
 
 TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN", "").strip()
 TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID", "").strip()
@@ -150,6 +152,18 @@ def run_jev_cycle():
         except Exception:
             pass
 
+    # Ingest Macro High-Impact News Blackout Status
+    news_blackout = False
+    event_name = ""
+    if os.path.exists(NEWS_FILE):
+        try:
+            with open(NEWS_FILE, "r") as nf:
+                ndata = json.load(nf)
+                news_blackout = bool(ndata.get("blackout_active", False))
+                event_name = ndata.get("event_name", "High Impact USD Event")
+        except Exception:
+            pass
+
     state = load_state()
     now_utc = datetime.now(timezone.utc).strftime("%H:%M UTC")
 
@@ -158,13 +172,24 @@ def run_jev_cycle():
 
     active = state.get("active_trade")
 
-    # 1. Active Position Lifecycle (Scale-out & SL/TP tracking)
+    # 1. Active Position Lifecycle (Scale-out, SL/TP tracking & News Shield)
     if active:
         side = active["side"]
         entry = active["entry_price"]
         sl = active["sl"]
         tp = active["tp"]
         risk = active["initial_risk"]
+
+        # Macro News Protection: Lock active trade to Breakeven
+        if news_blackout and not active.get("be_locked"):
+            active["sl"] = entry
+            active["be_locked"] = True
+            save_state(state)
+            send_tg_msg(
+                f"🛡️ <b>NEWS SHIELD ACTIVATED</b>\n"
+                f"• Event: <code>{event_name}</code>\n"
+                f"• Stop-Loss Auto-Locked to Breakeven (${entry:.2f})"
+            )
 
         # Scale out 50% at 1.5R & move Stop-Loss to Breakeven
         gain = (spot - entry) if side == "BUY" else (entry - spot)
@@ -204,7 +229,12 @@ def run_jev_cycle():
             send_tg_msg(f"{icon} <b>JEV TRADE CLOSED: {reason}</b>\n• PnL: <code>{'+' if pnl >= 0 else ''}${pnl:.2f}</code>\n• Balance: <code>${state['balance']:.2f}</code>")
         return
 
-    # 2. Confluence Setup Identification
+    # 2. Gatekeeper: Block fresh execution during News Blackout
+    if news_blackout:
+        print(f"[JEV ENGINE] Execution blocked: News Blackout Active ({event_name}).")
+        return
+
+    # 3. Confluence Setup Identification
     side = None
     sl = None
     tp = None
@@ -234,18 +264,16 @@ def run_jev_cycle():
     if not side:
         return
 
-    # 3. Kronos Neural Gatekeeper Filter
-    # Long rejected if Kronos detects strong Bearish Dump (Bull prob < 0.40)
+    # 4. Kronos Neural Gatekeeper Filter
     if side == "BUY" and kronos_bull_prob < 0.40:
         print(f"[JEV GATEKEEPER] BUY Setup rejected: Kronos Bearish Dump ({kronos_bull_prob:.2f})")
         return
 
-    # Short rejected if Kronos detects strong Bullish Expansion (Bull prob > 0.60)
     if side == "SELL" and kronos_bull_prob > 0.60:
         print(f"[JEV GATEKEEPER] SELL Setup rejected: Kronos Bullish Rally ({kronos_bull_prob:.2f})")
         return
 
-    # 4. Probabilistic Risk Sizing via Kronos Confidence
+    # 5. Probabilistic Risk Sizing via Kronos Confidence
     base_risk = 0.010  # 1.0% base risk
     if (side == "BUY" and kronos_bull_prob >= 0.70) or (side == "SELL" and kronos_bull_prob <= 0.30):
         risk_pct = 0.015  # 1.5% high conviction sizing
