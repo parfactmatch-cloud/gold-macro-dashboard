@@ -1,8 +1,10 @@
 """
 telegram_engine.py
-Institutional Macro Telemetry & Actionable Playbook Dual-Broadcaster
+Institutional Macro Telemetry, Kronos Neural AI & Actionable Playbook Dual-Broadcaster
 - Message 1: Original Institutional Market Radar Pulse (Untouched format)
-- Message 2: Dedicated Actionable Institutional Playbook (What To Do)
+- Message 2: Dedicated Actionable Institutional Playbook (What To Do + Kronos AI Bias)
+- Event Trigger: Kronos AI Regime Shift Alert (Chop -> Expansion)
+- Interactive Commands: /kronos & /ai
 """
 
 import os
@@ -12,6 +14,8 @@ from datetime import datetime, timezone
 
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 GEX_FILE = os.path.join(SCRIPT_DIR, "gex_levels.json")
+KRONOS_FILE = os.path.join(SCRIPT_DIR, "kronos_signal.json")
+KRONOS_STATE_FILE = os.path.join(SCRIPT_DIR, "kronos_state.json")
 
 TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN", "").strip()
 TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID", "").strip()
@@ -81,7 +85,7 @@ def format_original_radar_card(spot: float, data_source: str, us10y: float, yiel
     )
 
 
-def format_actionable_playbook(spot: float, call_wall: float, put_wall: float, gamma_flip: float, dex: float) -> str:
+def format_actionable_playbook(spot: float, call_wall: float, put_wall: float, gamma_flip: float, dex: float, kronos_regime: str, kronos_prob: float) -> str:
     """Actionable breakdown explaining how to trade the current pulse."""
     call_dist = call_wall - spot
     put_dist = spot - put_wall
@@ -107,6 +111,7 @@ def format_actionable_playbook(spot: float, call_wall: float, put_wall: float, g
         f"🎯 <b>ACTIONABLE INSTITUTIONAL PLAYBOOK</b>\n"
         f"━━━━━━━━━━━━━━━━━━━━━━━\n"
         f"📍 <b>Tactical Zone</b>: <code>{zone}</code>\n"
+        f"🧠 <b>Kronos Neural Bias</b>: <code>{kronos_regime} ({kronos_prob*100:.1f}%)</code>\n"
         f"💡 <b>Execution Strategy</b>:\n"
         f"• <b>Primary Bias</b>: {'Fade the rallies near resistance' if dex < 0 else 'Buy structural dips near floor'}\n\n"
         f"🔺 <b>Scenario A (Fade The Highs - Short Setup)</b>:\n"
@@ -120,6 +125,60 @@ def format_actionable_playbook(spot: float, call_wall: float, put_wall: float, g
         f"⚠️ <b>Regime Invalidation Warning</b>:\n"
         f"• If 30M candle closes below <code>${gamma_flip:.2f}</code> (Gamma Flip), do NOT buy dips; market enters high-velocity Short Gamma breakdown mode."
     )
+
+
+def handle_kronos_regime_shift(current_regime: str, bull_prob: float):
+    """Detects regime transitions and sends dedicated trigger alert."""
+    last_regime = "CHOP_CONSOLIDATION"
+    if os.path.exists(KRONOS_STATE_FILE):
+        try:
+            with open(KRONOS_STATE_FILE, "r") as f:
+                last_regime = json.load(f).get("last_regime", "CHOP_CONSOLIDATION")
+        except Exception:
+            pass
+
+    if current_regime != last_regime:
+        icon = "🚀" if "BULLISH" in current_regime else ("🩸" if "BEARISH" in current_regime else "⚖️")
+        shift_alert = (
+            f"🧠 <b>KRONOS AI: REGIME SHIFT DETECTED</b>\n"
+            f"━━━━━━━━━━━━━━━━━━━━━━━\n"
+            f"⚡ <b>New State</b>: {icon} <code>{current_regime}</code>\n"
+            f"🔄 <b>Shift</b>: <code>{last_regime}</code> ➔ <code>{current_regime}</code>\n"
+            f"📊 <b>Confidence Odds</b>: <code>{bull_prob*100:.1f}% Bullish | {(1.0-bull_prob)*100:.1f}% Bearish</code>\n"
+            f"🕯️ <b>Action</b>: {'Momentum expansion active; look for continuation setups.' if 'EXPANSION' in current_regime else 'Mean-reverting auction; respect corridor boundaries.'}"
+        )
+        send_tg_msg(shift_alert)
+
+    with open(KRONOS_STATE_FILE, "w") as f:
+        json.dump({"last_regime": current_regime}, f, indent=2)
+
+
+def handle_ai_interactive_commands(kronos_regime: str, bull_prob: float):
+    """Responds to /kronos or /ai commands."""
+    if not TELEGRAM_BOT_TOKEN:
+        return
+    url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/getUpdates"
+    try:
+        res = requests.get(url, params={"timeout": 2}, timeout=5)
+        if res.status_code != 200:
+            return
+        updates = res.json().get("result", [])
+        for u in updates:
+            text = u.get("message", {}).get("text", "").strip().lower()
+            if text in ["/kronos", "/ai"]:
+                reply = (
+                    f"🤖 <b>KRONOS NEURAL STATUS REPORT</b>\n"
+                    f"━━━━━━━━━━━━━━━━━━━━━━━\n"
+                    f"• <b>Evaluated Window</b>: 64 Bars (5M Timeframe)\n"
+                    f"• <b>Predicted Regime</b>: <code>{kronos_regime}</code>\n"
+                    f"• <b>Bullish Probability</b>: <code>{bull_prob*100:.1f}%</code>\n"
+                    f"• <b>Bearish Probability</b>: <code>{(1.0-bull_prob)*100:.1f}%</code>\n"
+                    f"• <b>Gatekeeper Filter</b>: <code>{'🛡️ ACTIVE' if 0.42 <= bull_prob <= 0.58 else '⚡ PERMISSIVE'}</code>"
+                )
+                send_tg_msg(reply)
+                break
+    except Exception:
+        pass
 
 
 def main():
@@ -139,6 +198,23 @@ def main():
     regime = data.get("net_gamma_regime", "LONG_GAMMA_MEAN_REVERT")
     sync_time = data.get("timestamp_utc", datetime.now(timezone.utc).strftime("%H:%M UTC | %d %b %Y"))
 
+    kronos_regime = "CHOP_CONSOLIDATION"
+    kronos_prob = 0.50
+    if os.path.exists(KRONOS_FILE):
+        try:
+            with open(KRONOS_FILE, "r") as kf:
+                kdata = json.load(kf)
+                kronos_regime = kdata.get("predicted_regime", "CHOP_CONSOLIDATION")
+                kronos_prob = float(kdata.get("bullish_probability", 0.50))
+        except Exception:
+            pass
+
+    # Check for /kronos commands
+    handle_ai_interactive_commands(kronos_regime, kronos_prob)
+
+    # Check for regime shift transition
+    handle_kronos_regime_shift(kronos_regime, kronos_prob)
+
     us10y_yield, yield_bias = fetch_fred_yield()
 
     regime_str = "🟩 LONG GAMMA (Mean-Reverting)" if "LONG" in regime else "🟥 SHORT GAMMA (Volatility Expansion)"
@@ -157,11 +233,11 @@ def main():
     )
     send_tg_msg(original_pulse)
 
-    # 2. Send the detailed actionable playbook right after
-    playbook = format_actionable_playbook(spot, call_wall, put_wall, gamma_flip, dex)
+    # 2. Send the detailed actionable playbook with Kronos neural bias
+    playbook = format_actionable_playbook(spot, call_wall, put_wall, gamma_flip, dex, kronos_regime, kronos_prob)
     send_tg_msg(playbook)
 
-    print("[TG ENGINE] Both Original Radar Pulse and Actionable Playbook dispatched.")
+    print("[TG ENGINE] Radar Pulse, Playbook, and Kronos monitors executed.")
 
 
 if __name__ == "__main__":
