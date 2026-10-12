@@ -1,6 +1,20 @@
 {
   "balance": 10000.0,
-  "active_trade": null,
+  "active_trade": {
+    "trade_id": "JEV-1791763283",
+    "side": "BUY",
+    "entry_price": 4188.83,
+    "units": 6.71,
+    "initial_risk": 11.170000000000073,
+    "sl": 4200.0,
+    "tp": 4210.5,
+    "rr": 1.94,
+    "reason": "CONFLUENCE_PUT_WALL_VAL_ABSORPTION",
+    "kronos_score": "CHOP_CONSOLIDATION (0.55)",
+    "be_locked": false,
+    "partial_taken": false,
+    "opened_at": "00:01 UTC"
+  },
   "closed_trades": [],
   "last_update_id": 21400128
 }
