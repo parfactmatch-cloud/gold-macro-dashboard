@@ -4,6 +4,7 @@ Order Flow Confluence Execution Engine (Jev Model)
 - Integrated with Kronos K-Line Foundation Model Neural Gatekeeper
 - Integrated with High-Impact Macro Economic News Blackout Gatekeeper
 - Integrated with Remote Telegram Control Center (/pause & /resume support)
+- Dynamic Volatility Scaling: Live 14-period 5M ATR Dynamic Stop-Loss Buffer
 - Hardened SL/TP Sanity Checks (Prevents Inverted SL on Longs/Shorts)
 """
 
@@ -11,6 +12,8 @@ import os
 import json
 import math
 import requests
+import pandas as pd
+import yfinance as yf
 from datetime import datetime, timezone
 
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -32,6 +35,39 @@ def send_tg_msg(text: str):
         requests.post(url, json={"chat_id": TELEGRAM_CHAT_ID, "text": text, "parse_mode": "HTML"}, timeout=8)
     except Exception:
         pass
+
+
+def compute_dynamic_atr_buffer(ticker_symbol: str = "GC=F") -> float:
+    """
+    Calculates 14-period Average True Range (ATR) on 5M timeframe.
+    Dynamically scales Stop-Loss buffer based on real-time market volatility.
+    """
+    try:
+        t = yf.Ticker(ticker_symbol)
+        df = t.history(period="1d", interval="5m")
+        if df.empty or len(df) < 15:
+            return 8.50  # Balanced fallback
+
+        high = df["High"]
+        low = df["Low"]
+        close_prev = df["Close"].shift(1)
+
+        tr = pd.concat([
+            high - low,
+            (high - close_prev).abs(),
+            (low - close_prev).abs()
+        ], axis=1).max(axis=1)
+
+        atr = tr.rolling(window=14).mean().iloc[-1]
+        if math.isnan(atr) or atr <= 0:
+            return 8.50
+
+        # 1.25x ATR multiplier to stay outside microstructure noise
+        adaptive_buffer = round(float(atr * 1.25), 2)
+        # Bounded between $4.50 and $18.00
+        return max(4.50, min(adaptive_buffer, 18.00))
+    except Exception:
+        return 8.50
 
 
 def load_state() -> dict:
@@ -83,6 +119,7 @@ def handle_telegram_commands(state: dict, spot: float):
                         f"• Entry: <code>${entry:.2f}</code> | Spot: <code>${spot:.2f}</code>\n"
                         f"• PnL: <code>{'+' if fl_pnl >= 0 else ''}${fl_pnl:.2f}</code>\n"
                         f"• Target TP: <code>${active['tp']:.2f}</code> | SL: <code>${active['sl']:.2f}</code>\n"
+                        f"• Dynamic Buffer: <code>${active.get('atr_buffer', 8.50):.2f}</code>\n"
                         f"• Neural AI Score: <code>{active.get('kronos_score', 'N/A')}</code>\n"
                         f"• Setup: <code>{active.get('reason')}</code>"
                     )
@@ -145,7 +182,7 @@ def run_jev_cycle():
     val = float(of.get("session_val", spot - 15.0))
     vah = float(of.get("session_vah", spot + 15.0))
 
-    # Ingest Kronos Foundation Model Signals
+    # Ingest Kronos Signals
     kronos_bull_prob = 0.50
     kronos_regime = "NEUTRAL"
     if os.path.exists(KRONOS_FILE):
@@ -177,15 +214,13 @@ def run_jev_cycle():
 
     active = state.get("active_trade")
 
-    # 1. Active Position Lifecycle (Scale-out, SL/TP tracking & News Shield)
+    # 1. Active Position Lifecycle
     if active:
         side = active["side"]
         entry = active["entry_price"]
-        sl = active["sl"]
-        tp = active["tp"]
         risk = active["initial_risk"]
 
-        # Macro News Protection: Lock active trade to Breakeven
+        # News Shield Activation
         if news_blackout and not active.get("be_locked"):
             active["sl"] = entry
             active["be_locked"] = True
@@ -196,7 +231,7 @@ def run_jev_cycle():
                 f"• Stop-Loss Auto-Locked to Breakeven (${entry:.2f})"
             )
 
-        # Scale out 50% at 1.5R & move Stop-Loss to Breakeven
+        # 50% Scale-out at 1.5R
         gain = (spot - entry) if side == "BUY" else (entry - spot)
         if not active.get("partial_taken") and gain >= (risk * 1.5):
             booked = round(active["units"] * 0.5, 2)
@@ -212,13 +247,13 @@ def run_jev_cycle():
         pnl = 0.0
         reason = ""
         if side == "BUY":
-            if spot >= tp:
-                closed = True; pnl = (tp - entry) * active["units"]; reason = "TARGET_HIT_POC"
+            if spot >= active["tp"]:
+                closed = True; pnl = (active["tp"] - entry) * active["units"]; reason = "TARGET_HIT_POC"
             elif spot <= active["sl"]:
                 closed = True; pnl = (active["sl"] - entry) * active["units"]; reason = "STOP_LOSS_HIT"
         elif side == "SELL":
-            if spot <= tp:
-                closed = True; pnl = (entry - tp) * active["units"]; reason = "TARGET_HIT_POC"
+            if spot <= active["tp"]:
+                closed = True; pnl = (entry - active["tp"]) * active["units"]; reason = "TARGET_HIT_POC"
             elif spot >= active["sl"]:
                 closed = True; pnl = (entry - active["sl"]) * active["units"]; reason = "STOP_LOSS_HIT"
 
@@ -234,12 +269,11 @@ def run_jev_cycle():
             send_tg_msg(f"{icon} <b>JEV TRADE CLOSED: {reason}</b>\n• PnL: <code>{'+' if pnl >= 0 else ''}${pnl:.2f}</code>\n• Balance: <code>${state['balance']:.2f}</code>")
         return
 
-    # 2. Gatekeeper 1: Block fresh execution during News Blackout
+    # 2. Gatekeepers
     if news_blackout:
         print(f"[JEV ENGINE] Execution blocked: News Blackout Active ({event_name}).")
         return
 
-    # 3. Gatekeeper 2: Block execution if paused remotely via Telegram (/pause)
     if os.path.exists(CONTROL_FILE):
         try:
             with open(CONTROL_FILE, "r") as cf:
@@ -249,45 +283,46 @@ def run_jev_cycle():
         except Exception:
             pass
 
-    # 4. Confluence Setup Identification with Strict SL Guards
+    # 3. Dynamic ATR Volatility Scaling
+    atr_buffer = compute_dynamic_atr_buffer()
+
+    # 4. Confluence Setup Identification
     side = None
     sl = None
     tp = None
     reason = None
 
-    # Long Setup: Price near Put Wall or Value Area Low
+    # Long Setup: Price testing floor + VAL absorption
     if (spot <= (put_wall + 8.0) or spot <= (val + 4.0)) and not blast:
         target_tp = round(poc, 2)
-        if target_tp > spot + 4.0:  # Valid only if target is above entry
+        if target_tp > spot + 4.0:
             side = "BUY"
-            # SL must strictly be lower than spot
             floor_ref = min(spot, put_wall, val)
-            sl = round(floor_ref - 10.0, 2)
+            sl = round(floor_ref - atr_buffer, 2)
             tp = target_tp
             reason = "CONFLUENCE_PUT_WALL_VAL_ABSORPTION"
 
-    # Short Setup: Price near Call Wall or Value Area High
+    # Short Setup: Price testing ceiling + VAH exhaustion
     elif (spot >= (call_wall - 8.0) or spot >= (vah - 4.0)) and not blast:
         target_tp = round(poc, 2)
-        if target_tp < spot - 4.0:  # Valid only if target is below entry
+        if target_tp < spot - 4.0:
             side = "SELL"
-            # SL must strictly be higher than spot
             ceil_ref = max(spot, call_wall, vah)
-            sl = round(ceil_ref + 10.0, 2)
+            sl = round(ceil_ref + atr_buffer, 2)
             tp = target_tp
             reason = "CONFLUENCE_CALL_WALL_VAH_EXHAUSTION"
 
     # Momentum Setup: Gamma Blast Expansion
     elif blast and abs(dex) > 8.0 and spot > gamma_flip:
         side = "BUY"
-        sl = round(spot - 15.0, 2)
-        tp = round(spot + 45.0, 2)
+        sl = round(spot - (atr_buffer * 1.5), 2)
+        tp = round(spot + (atr_buffer * 3.5), 2)
         reason = "ORDERFLOW_GAMMA_BLAST_EXPANSION"
 
     if not side or not sl or not tp:
         return
 
-    # Strict Validation: Stop-Loss must never violate order direction
+    # Hard Directional SL Sanity Guard
     if side == "BUY" and sl >= spot:
         return
     if side == "SELL" and sl <= spot:
@@ -302,7 +337,7 @@ def run_jev_cycle():
         print(f"[JEV GATEKEEPER] SELL Setup rejected: Kronos Bullish Rally ({kronos_bull_prob:.2f})")
         return
 
-    # 6. Probabilistic Risk Sizing via Kronos Confidence
+    # 6. Probabilistic Fractional Sizing
     base_risk = 0.010
     if (side == "BUY" and kronos_bull_prob >= 0.70) or (side == "SELL" and kronos_bull_prob <= 0.30):
         risk_pct = 0.015
@@ -327,6 +362,7 @@ def run_jev_cycle():
         "entry_price": spot,
         "units": units,
         "initial_risk": risk_dist,
+        "atr_buffer": atr_buffer,
         "sl": sl,
         "tp": tp,
         "rr": rr,
@@ -346,7 +382,7 @@ def run_jev_cycle():
         f"🏷 <b>Setup</b>: <code>{reason}</code>\n"
         f"🎯 <b>Action</b>: <code>{side} XAU/USD</code>\n"
         f"💵 <b>Fill Spot</b>: <code>${spot:.2f}</code> ({units} oz | {risk_pct*100:.2f}% Risk)\n"
-        f"🛑 <b>Stop Loss</b>: <code>${sl:.2f}</code>\n"
+        f"🛑 <b>Stop Loss</b>: <code>${sl:.2f}</code> (ATR Dyn Buffer: <code>${atr_buffer:.2f}</code>)\n"
         f"🎯 <b>Target POC</b>: <code>${tp:.2f}</code> (R:R 1:{rr})\n"
         f"🧠 <b>Kronos Neural Gate</b>: <code>{kronos_regime} ({kronos_bull_prob:.2f})</code>\n"
         f"📊 <b>Profile Context</b>: VAL ${val:.2f} | POC ${poc:.2f} | VAH ${vah:.2f}\n"
