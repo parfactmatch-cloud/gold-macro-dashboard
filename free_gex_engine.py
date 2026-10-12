@@ -5,7 +5,8 @@ Enhanced with Intraday Order Flow & Session Volume Profile Telemetry:
 - Multi-Tier Ingestion (LSE, Twelve Data, COMEX GC=F, GLD Parity)
 - Options Chain Black-Scholes-Merton Greek Engine (<= 45 DTE)
 - Intraday Session Volume Profile: Point of Control (POC), VAH, VAL
-- Added: Strike Sanitization (+-15% of spot), NaN Guards, Wall Alignment
+- Strike Sanitization (+-18% of spot), NaN Guards, Wall Alignment
+- Hardened JSON Serialization (NumPy bool_/float/int serialization fix)
 - Outputs unified artifact: gex_levels.json
 """
 
@@ -280,7 +281,7 @@ def compute_options_gex(spot_xau: float) -> dict:
 
         # Net Gamma Regime
         regime = "SHORT_GAMMA_EXPANSION" if spot_xau < gamma_flip_xau else "LONG_GAMMA_MEAN_REVERT"
-        blast = total_dex < -15.0
+        blast = bool(total_dex < -15.0)
 
         return {
             "gld_close": round(gld_spot, 2),
@@ -310,6 +311,19 @@ def compute_options_gex(spot_xau: float) -> dict:
 # =====================================================================
 # 4. MAIN ORCHESTRATION & PAYLOAD SERIALIZATION
 # =====================================================================
+def json_serial_fallback(obj):
+    """Encodes NumPy types for native Python json serialization."""
+    if isinstance(obj, (np.integer,)):
+        return int(obj)
+    elif isinstance(obj, (np.floating, float)):
+        return float(obj)
+    elif isinstance(obj, (np.bool_, bool)):
+        return bool(obj)
+    elif isinstance(obj, np.ndarray):
+        return obj.tolist()
+    raise TypeError(f"Object of type {type(obj)} is not JSON serializable")
+
+
 def main():
     print("[GEX ENGINE] Fetching multi-tier institutional spot quote...")
     spot_xau, data_source = fetch_spot_gold()
@@ -339,7 +353,7 @@ def main():
         "gamma_flip_xau": gex_data["gamma_flip_xau"],
         "net_dex_m": gex_data["net_dex_m"],
         "net_gamma_regime": gex_data["net_gamma_regime"],
-        "gamma_blast_active": gex_data["gamma_blast_active"],
+        "gamma_blast_active": bool(gex_data["gamma_blast_active"]),
         "call_distance_telemetry": f"Call: +${call_dist:.2f}",
         "put_distance_telemetry": f"Put: -${put_dist:.2f}",
         "is_corridor_valid": True,
@@ -360,7 +374,7 @@ def main():
     }
 
     with open(OUTPUT_FILE, "w") as f:
-        json.dump(payload, f, indent=2)
+        json.dump(payload, f, indent=2, default=json_serial_fallback)
 
     print(f"[GEX ENGINE SUCCESS] Clean Telemetry written to {OUTPUT_FILE}")
 
