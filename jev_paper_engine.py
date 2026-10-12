@@ -3,12 +3,13 @@ jev_paper_engine.py
 Order Flow Confluence Execution Engine (Jev Model)
 - Integrated with Kronos K-Line Foundation Model Neural Gatekeeper
 - Integrated with High-Impact Macro Economic News Blackout Gatekeeper
-- Confluence: GEX Walls + Volume Profile (POC/VAL/VAH) + Kronos AI Bias
-- Trailing SL, Breakeven Lock, 50% Scale-Out & 2-Way Interactive Bot Commands
+- Integrated with Remote Telegram Control Center (/pause & /resume support)
+- Hardened SL/TP Sanity Checks (Prevents Inverted SL on Longs/Shorts)
 """
 
 import os
 import json
+import math
 import requests
 from datetime import datetime, timezone
 
@@ -17,6 +18,7 @@ GEX_FILE = os.path.join(SCRIPT_DIR, "gex_levels.json")
 TRADES_FILE = os.path.join(SCRIPT_DIR, "paper_trades.json")
 KRONOS_FILE = os.path.join(SCRIPT_DIR, "kronos_signal.json")
 NEWS_FILE = os.path.join(SCRIPT_DIR, "news_status.json")
+CONTROL_FILE = os.path.join(SCRIPT_DIR, "bot_control.json")
 
 TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN", "").strip()
 TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID", "").strip()
@@ -129,6 +131,9 @@ def run_jev_cycle():
         telemetry = json.load(f)
 
     spot = float(telemetry.get("spot_xau", 0.0))
+    if spot <= 1000 or math.isnan(spot):
+        return
+
     call_wall = float(telemetry.get("call_wall_xau", 0.0))
     put_wall = float(telemetry.get("put_wall_xau", 0.0))
     gamma_flip = float(telemetry.get("gamma_flip_xau", spot))
@@ -229,42 +234,66 @@ def run_jev_cycle():
             send_tg_msg(f"{icon} <b>JEV TRADE CLOSED: {reason}</b>\n• PnL: <code>{'+' if pnl >= 0 else ''}${pnl:.2f}</code>\n• Balance: <code>${state['balance']:.2f}</code>")
         return
 
-    # 2. Gatekeeper: Block fresh execution during News Blackout
+    # 2. Gatekeeper 1: Block fresh execution during News Blackout
     if news_blackout:
         print(f"[JEV ENGINE] Execution blocked: News Blackout Active ({event_name}).")
         return
 
-    # 3. Confluence Setup Identification
+    # 3. Gatekeeper 2: Block execution if paused remotely via Telegram (/pause)
+    if os.path.exists(CONTROL_FILE):
+        try:
+            with open(CONTROL_FILE, "r") as cf:
+                if json.load(cf).get("is_paused", False):
+                    print("[JEV ENGINE] Execution blocked: Engine paused via Telegram /pause.")
+                    return
+        except Exception:
+            pass
+
+    # 4. Confluence Setup Identification with Strict SL Guards
     side = None
     sl = None
     tp = None
     reason = None
 
-    # Long Confluence: Put Wall floor touch + VAL absorption
-    if spot <= (put_wall + 8.0) and spot <= (val + 4.0) and not blast:
-        side = "BUY"
-        sl = round(min(put_wall, val) - 10.0, 2)
-        tp = round(poc, 2)
-        reason = "CONFLUENCE_PUT_WALL_VAL_ABSORPTION"
+    # Long Setup: Price near Put Wall or Value Area Low
+    if (spot <= (put_wall + 8.0) or spot <= (val + 4.0)) and not blast:
+        target_tp = round(poc, 2)
+        if target_tp > spot + 4.0:  # Valid only if target is above entry
+            side = "BUY"
+            # SL must strictly be lower than spot
+            floor_ref = min(spot, put_wall, val)
+            sl = round(floor_ref - 10.0, 2)
+            tp = target_tp
+            reason = "CONFLUENCE_PUT_WALL_VAL_ABSORPTION"
 
-    # Short Confluence: Call Wall ceiling touch + VAH exhaustion
-    elif spot >= (call_wall - 8.0) and spot >= (vah - 4.0) and not blast:
-        side = "SELL"
-        sl = round(max(call_wall, vah) + 10.0, 2)
-        tp = round(poc, 2)
-        reason = "CONFLUENCE_CALL_WALL_VAH_EXHAUSTION"
+    # Short Setup: Price near Call Wall or Value Area High
+    elif (spot >= (call_wall - 8.0) or spot >= (vah - 4.0)) and not blast:
+        target_tp = round(poc, 2)
+        if target_tp < spot - 4.0:  # Valid only if target is below entry
+            side = "SELL"
+            # SL must strictly be higher than spot
+            ceil_ref = max(spot, call_wall, vah)
+            sl = round(ceil_ref + 10.0, 2)
+            tp = target_tp
+            reason = "CONFLUENCE_CALL_WALL_VAH_EXHAUSTION"
 
-    # Momentum Gamma Blast Continuation
-    elif blast and dex > 8.0 and spot > gamma_flip:
+    # Momentum Setup: Gamma Blast Expansion
+    elif blast and abs(dex) > 8.0 and spot > gamma_flip:
         side = "BUY"
         sl = round(spot - 15.0, 2)
         tp = round(spot + 45.0, 2)
         reason = "ORDERFLOW_GAMMA_BLAST_EXPANSION"
 
-    if not side:
+    if not side or not sl or not tp:
         return
 
-    # 4. Kronos Neural Gatekeeper Filter
+    # Strict Validation: Stop-Loss must never violate order direction
+    if side == "BUY" and sl >= spot:
+        return
+    if side == "SELL" and sl <= spot:
+        return
+
+    # 5. Kronos Neural Gatekeeper Filter
     if side == "BUY" and kronos_bull_prob < 0.40:
         print(f"[JEV GATEKEEPER] BUY Setup rejected: Kronos Bearish Dump ({kronos_bull_prob:.2f})")
         return
@@ -273,12 +302,12 @@ def run_jev_cycle():
         print(f"[JEV GATEKEEPER] SELL Setup rejected: Kronos Bullish Rally ({kronos_bull_prob:.2f})")
         return
 
-    # 5. Probabilistic Risk Sizing via Kronos Confidence
-    base_risk = 0.010  # 1.0% base risk
+    # 6. Probabilistic Risk Sizing via Kronos Confidence
+    base_risk = 0.010
     if (side == "BUY" and kronos_bull_prob >= 0.70) or (side == "SELL" and kronos_bull_prob <= 0.30):
-        risk_pct = 0.015  # 1.5% high conviction sizing
+        risk_pct = 0.015
     elif 0.45 <= kronos_bull_prob <= 0.55:
-        risk_pct = 0.0075  # 0.75% chop/noise sizing
+        risk_pct = 0.0075
     else:
         risk_pct = base_risk
 
