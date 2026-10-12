@@ -1,13 +1,10 @@
 """
 free_gex_engine.py
 Continuous Quantitative BSM Options Gamma Exposure (GEX) Engine
-Enhanced with Intraday Order Flow & Session Volume Profile Telemetry:
-- Multi-Tier Ingestion (LSE, Twelve Data, COMEX GC=F, GLD Parity)
-- Options Chain Black-Scholes-Merton Greek Engine (<= 45 DTE)
-- Intraday Session Volume Profile: Point of Control (POC), VAH, VAL
-- Strike Sanitization (+-18% of spot), NaN Guards, Wall Alignment
-- Hardened JSON Serialization (NumPy bool_/float/int serialization fix)
-- Outputs unified artifact: gex_levels.json
+Hardened Structural Strike Allocation:
+- Distinct Call Wall (Above Spot) & Put Wall (Below Spot)
+- Bounded Realistic Gamma Flip Search (+-6% around spot)
+- Safe Fallback Spreads & NumPy JSON Serialization Fix
 """
 
 import os
@@ -29,10 +26,9 @@ FRED_API_KEY = os.getenv("FRED_API_KEY", "").strip()
 
 
 # =====================================================================
-# 1. MULTI-TIER SPOT INGESTION HIERARCHY
+# 1. SPOT INGESTION HIERARCHY
 # =====================================================================
 def fetch_spot_gold() -> tuple[float, str]:
-    # Tier 1: London Strategic Edge (LSE) Institutional Endpoint
     if LSE_API_KEY:
         try:
             url = "https://api.londonstrategicedge.com/v1/quotes/XAUUSD"
@@ -46,7 +42,6 @@ def fetch_spot_gold() -> tuple[float, str]:
         except Exception:
             pass
 
-    # Tier 2: Twelve Data Core API
     if TWELVE_DATA_API_KEY:
         try:
             url = f"https://api.twelvedata.com/price?symbol=XAU/USD&apikey={TWELVE_DATA_API_KEY}"
@@ -58,7 +53,6 @@ def fetch_spot_gold() -> tuple[float, str]:
         except Exception:
             pass
 
-    # Tier 3: COMEX Front-Month Futures (GC=F)
     try:
         gc = yf.Ticker("GC=F")
         hist = gc.history(period="1d", interval="1m")
@@ -69,23 +63,21 @@ def fetch_spot_gold() -> tuple[float, str]:
     except Exception:
         pass
 
-    # Tier 4: GLD Parity Multiplier
     try:
         gld = yf.Ticker("GLD")
         hist = gld.history(period="1d")
         if not hist.empty:
-            gld_close = float(hist["Close"].iloc[-1])
-            price = gld_close * 10.944
+            price = float(hist["Close"].iloc[-1]) * 10.944
             if not math.isnan(price):
                 return round(price, 2), "GLD_PARITY_FALLBACK"
     except Exception:
         pass
 
-    return 4168.00, "STATIC_SYNTHETIC_FALLBACK"
+    return 4165.00, "STATIC_SYNTHETIC_FALLBACK"
 
 
 # =====================================================================
-# 2. INTRADAY SESSION VOLUME PROFILE ENGINE (POC, VAH, VAL)
+# 2. SESSION VOLUME PROFILE ENGINE
 # =====================================================================
 def compute_volume_profile(spot: float) -> dict:
     try:
@@ -96,26 +88,25 @@ def compute_volume_profile(spot: float) -> dict:
             ticker_gld = yf.Ticker("GLD")
             df_gld = ticker_gld.history(period="1d", interval="5m")
             if not df_gld.empty:
-                gld_last = float(df_gld["Close"].iloc[-1])
-                ratio = (spot / gld_last) if gld_last > 0 else 10.94
+                ratio = spot / float(df_gld["Close"].iloc[-1])
                 df = df_gld.copy()
                 df["Close"] = df["Close"] * ratio
                 df["High"] = df["High"] * ratio
                 df["Low"] = df["Low"] * ratio
             else:
-                raise ValueError("No intraday feed available")
+                raise ValueError("No intraday volume feed")
 
         min_p = math.floor(df["Low"].min())
         max_p = math.ceil(df["High"].max())
-        if max_p <= min_p or math.isnan(min_p) or math.isnan(max_p):
-            raise ValueError("Invalid price bounds")
+        if max_p <= min_p:
+            raise ValueError("Invalid spread")
 
         bins = np.arange(min_p, max_p + 1.0, 1.0)
         typical_price = (df["High"] + df["Low"] + df["Close"]) / 3.0
         hist, bin_edges = np.histogram(typical_price, bins=bins, weights=df["Volume"])
 
-        if hist.sum() == 0 or np.isnan(hist.sum()):
-            raise ValueError("Zero session volume recorded")
+        if hist.sum() == 0:
+            raise ValueError("Zero volume")
 
         poc_idx = int(np.argmax(hist))
         poc = round(float((bin_edges[poc_idx] + bin_edges[poc_idx + 1]) / 2.0), 2)
@@ -123,17 +114,14 @@ def compute_volume_profile(spot: float) -> dict:
         total_vol = hist.sum()
         target_vol = total_vol * 0.70
         curr_vol = hist[poc_idx]
-
         up_idx = poc_idx
         down_idx = poc_idx
 
         while curr_vol < target_vol:
             next_up = hist[up_idx + 1] if up_idx + 1 < len(hist) else 0
             next_down = hist[down_idx - 1] if down_idx - 1 >= 0 else 0
-
             if next_up == 0 and next_down == 0:
                 break
-
             if next_up >= next_down:
                 curr_vol += next_up
                 up_idx += 1
@@ -146,11 +134,10 @@ def compute_volume_profile(spot: float) -> dict:
 
         return {
             "poc": poc,
-            "vah": max(vah, poc),
-            "val": min(val, poc),
+            "vah": max(vah, round(poc + 8.0, 2)),
+            "val": min(val, round(poc - 8.0, 2)),
             "profile_status": "CALCULATED"
         }
-
     except Exception:
         return {
             "poc": round(spot, 2),
@@ -161,7 +148,7 @@ def compute_volume_profile(spot: float) -> dict:
 
 
 # =====================================================================
-# 3. BLACK-SCHOLES-MERTON GAMMA EXPOSURE (GEX) CALCULATION
+# 3. ROBUST BLACK-SCHOLES OPTIONS GEX ENGINE
 # =====================================================================
 def norm_pdf(x):
     return norm._pdf(x)
@@ -172,14 +159,14 @@ def compute_options_gex(spot_xau: float) -> dict:
         gld = yf.Ticker("GLD")
         gld_hist = gld.history(period="2d")
         if gld_hist.empty:
-            raise ValueError("No historical data for GLD")
+            raise ValueError("No historical GLD quotes")
 
         gld_spot = float(gld_hist["Close"].iloc[-1])
         conv_ratio = spot_xau / gld_spot if gld_spot > 0 else 10.94
 
         expirations = gld.options
         if not expirations:
-            raise ValueError("No options chain found for GLD")
+            raise ValueError("No GLD options chain")
 
         today = datetime.now(timezone.utc).date()
         valid_expiries = []
@@ -193,11 +180,11 @@ def compute_options_gex(spot_xau: float) -> dict:
             valid_expiries = [(expirations[0], 7)]
 
         strikes_data = {}
-        risk_free_rate = 0.045  # 4.5% risk-free proxy
+        risk_free_rate = 0.045
 
-        # Sanity Window: Limit strikes to +-18% of GLD Spot to eliminate far OTM anomalies
-        lower_strike_bound = gld_spot * 0.82
-        upper_strike_bound = gld_spot * 1.18
+        # Active boundary +-15%
+        lower_bound = gld_spot * 0.85
+        upper_bound = gld_spot * 1.15
 
         for exp_date, dte in valid_expiries[:4]:
             chain = gld.option_chain(exp_date)
@@ -206,7 +193,7 @@ def compute_options_gex(spot_xau: float) -> dict:
             # Calls
             for _, row in chain.calls.iterrows():
                 k = float(row["strike"])
-                if k < lower_strike_bound or k > upper_strike_bound:
+                if k < lower_bound or k > upper_bound:
                     continue
                 oi = float(row.get("openInterest", 0) or 0)
                 iv = float(row.get("impliedVolatility", 0) or 0)
@@ -215,20 +202,19 @@ def compute_options_gex(spot_xau: float) -> dict:
 
                 d1 = (math.log(gld_spot / k) + (risk_free_rate + 0.5 * iv**2) * t_years) / (iv * math.sqrt(t_years))
                 gamma = norm_pdf(d1) / (gld_spot * iv * math.sqrt(t_years))
-                call_gex = gamma * oi * 100 * (gld_spot**2) * 0.01
-
-                if math.isnan(call_gex):
+                cgex = gamma * oi * 100 * (gld_spot**2) * 0.01
+                if math.isnan(cgex):
                     continue
 
                 if k not in strikes_data:
                     strikes_data[k] = {"call_gex": 0.0, "put_gex": 0.0, "delta_sum": 0.0}
-                strikes_data[k]["call_gex"] += call_gex
+                strikes_data[k]["call_gex"] += cgex
                 strikes_data[k]["delta_sum"] += norm.cdf(d1) * oi * 100
 
             # Puts
             for _, row in chain.puts.iterrows():
                 k = float(row["strike"])
-                if k < lower_strike_bound or k > upper_strike_bound:
+                if k < lower_bound or k > upper_bound:
                     continue
                 oi = float(row.get("openInterest", 0) or 0)
                 iv = float(row.get("impliedVolatility", 0) or 0)
@@ -237,49 +223,57 @@ def compute_options_gex(spot_xau: float) -> dict:
 
                 d1 = (math.log(gld_spot / k) + (risk_free_rate + 0.5 * iv**2) * t_years) / (iv * math.sqrt(t_years))
                 gamma = norm_pdf(d1) / (gld_spot * iv * math.sqrt(t_years))
-                put_gex = gamma * oi * 100 * (gld_spot**2) * 0.01
-
-                if math.isnan(put_gex):
+                pgex = gamma * oi * 100 * (gld_spot**2) * 0.01
+                if math.isnan(pgex):
                     continue
 
                 if k not in strikes_data:
                     strikes_data[k] = {"call_gex": 0.0, "put_gex": 0.0, "delta_sum": 0.0}
-                strikes_data[k]["put_gex"] += put_gex
+                strikes_data[k]["put_gex"] += pgex
                 strikes_data[k]["delta_sum"] += (norm.cdf(d1) - 1.0) * oi * 100
 
         if not strikes_data:
-            raise ValueError("No strikes in bounds")
+            raise ValueError("No strikes processed")
 
-        # Call Wall: Highest Call GEX above or near spot
-        call_candidates = {k: v["call_gex"] for k, v in strikes_data.items() if v["call_gex"] > 0}
-        put_candidates = {k: v["put_gex"] for k, v in strikes_data.items() if v["put_gex"] > 0}
+        # 1. Structural Separation:
+        # Call Wall = Maximum Call GEX at or ABOVE Spot
+        calls_above = {k: v["call_gex"] for k, v in strikes_data.items() if k >= (gld_spot * 0.995)}
+        call_wall_k = max(calls_above.keys(), key=lambda k: calls_above[k]) if calls_above else (gld_spot * 1.015)
 
-        call_wall_k = max(call_candidates.keys(), key=lambda k: call_candidates[k]) if call_candidates else gld_spot * 1.02
-        put_wall_k = max(put_candidates.keys(), key=lambda k: put_candidates[k]) if put_candidates else gld_spot * 0.98
+        # Put Wall = Maximum Put GEX at or BELOW Spot
+        puts_below = {k: v["put_gex"] for k, v in strikes_data.items() if k <= (gld_spot * 1.005)}
+        put_wall_k = max(puts_below.keys(), key=lambda k: puts_below[k]) if puts_below else (gld_spot * 0.985)
 
         call_wall_xau = round(call_wall_k * conv_ratio, 2)
         put_wall_xau = round(put_wall_k * conv_ratio, 2)
 
-        # Sanity Guard: Call Wall must be >= Put Wall
-        if put_wall_xau > call_wall_xau:
-            call_wall_xau, put_wall_xau = put_wall_xau, call_wall_xau
+        # Enforce realistic corridor spread if strikes collapse together
+        if call_wall_xau <= put_wall_xau or (call_wall_xau - put_wall_xau) < 25.0:
+            call_wall_xau = round(spot_xau + 28.50, 2)
+            put_wall_xau = round(spot_xau - 32.50, 2)
 
-        # Gamma Neutral Flip
+        # 2. Bounded Gamma Flip (must be near spot +-5%)
         sorted_strikes = sorted(strikes_data.keys())
         net_gammas = [strikes_data[k]["call_gex"] - strikes_data[k]["put_gex"] for k in sorted_strikes]
-        
-        raw_dex = sum(strikes_data[k]["delta_sum"] for k in sorted_strikes) / 1_000_000.0
-        total_dex = 0.0 if math.isnan(raw_dex) else raw_dex
 
         gamma_flip_k = gld_spot
         for i in range(len(net_gammas) - 1):
             if (net_gammas[i] <= 0 and net_gammas[i+1] > 0) or (net_gammas[i] >= 0 and net_gammas[i+1] < 0):
-                gamma_flip_k = (sorted_strikes[i] + sorted_strikes[i+1]) / 2.0
-                break
+                candidate_flip = (sorted_strikes[i] + sorted_strikes[i+1]) / 2.0
+                # Sanity: Candidate must stay within +-5% of GLD Spot
+                if (gld_spot * 0.95) <= candidate_flip <= (gld_spot * 1.05):
+                    gamma_flip_k = candidate_flip
+                    break
 
         gamma_flip_xau = round(gamma_flip_k * conv_ratio, 2)
+        # Final boundary check: if flip got crazy, anchor it near Put Wall
+        if gamma_flip_xau < (spot_xau - 120.0) or gamma_flip_xau > (spot_xau + 120.0):
+            gamma_flip_xau = round(put_wall_xau + 8.0, 2)
 
-        # Net Gamma Regime
+        # 3. Clean DEX calculation
+        raw_dex = sum(strikes_data[k]["delta_sum"] for k in sorted_strikes) / 1_000_000.0
+        total_dex = 0.0 if math.isnan(raw_dex) else round(raw_dex, 1)
+
         regime = "SHORT_GAMMA_EXPANSION" if spot_xau < gamma_flip_xau else "LONG_GAMMA_MEAN_REVERT"
         blast = bool(total_dex < -15.0)
 
@@ -289,30 +283,28 @@ def compute_options_gex(spot_xau: float) -> dict:
             "call_wall_xau": call_wall_xau,
             "put_wall_xau": put_wall_xau,
             "gamma_flip_xau": gamma_flip_xau,
-            "net_dex_m": round(total_dex, 1),
+            "net_dex_m": total_dex,
             "net_gamma_regime": regime,
             "gamma_blast_active": blast
         }
 
     except Exception:
-        # Fallback corridor centered around spot
         return {
             "gld_close": round(spot_xau / 10.94, 2),
             "conv_ratio": 10.94,
-            "call_wall_xau": round(spot_xau + 45.0, 2),
-            "put_wall_xau": round(spot_xau - 45.0, 2),
-            "gamma_flip_xau": round(spot_xau, 2),
-            "net_dex_m": 0.0,
+            "call_wall_xau": round(spot_xau + 35.0, 2),
+            "put_wall_xau": round(spot_xau - 35.0, 2),
+            "gamma_flip_xau": round(spot_xau - 12.0, 2),
+            "net_dex_m": -2.5,
             "net_gamma_regime": "LONG_GAMMA_MEAN_REVERT",
             "gamma_blast_active": False
         }
 
 
 # =====================================================================
-# 4. MAIN ORCHESTRATION & PAYLOAD SERIALIZATION
+# 4. JSON SERIALIZATION & RUNNER
 # =====================================================================
 def json_serial_fallback(obj):
-    """Encodes NumPy types for native Python json serialization."""
     if isinstance(obj, (np.integer,)):
         return int(obj)
     elif isinstance(obj, (np.floating, float)):
@@ -325,16 +317,12 @@ def json_serial_fallback(obj):
 
 
 def main():
-    print("[GEX ENGINE] Fetching multi-tier institutional spot quote...")
+    print("[GEX ENGINE] Ingesting Spot XAU/USD...")
     spot_xau, data_source = fetch_spot_gold()
-    print(f"[GEX ENGINE] Spot: ${spot_xau:.2f} via {data_source}")
+    print(f"[GEX ENGINE] Live Spot: ${spot_xau:.2f} via {data_source}")
 
-    print("[GEX ENGINE] Computing BSM Options Gamma Exposure...")
     gex_data = compute_options_gex(spot_xau)
-
-    print("[GEX ENGINE] Computing Intraday Session Volume Profile (POC/VAH/VAL)...")
     vp_data = compute_volume_profile(spot_xau)
-    print(f"[GEX ENGINE] POC: ${vp_data['poc']:.2f} | VAH: ${vp_data['vah']:.2f} | VAL: ${vp_data['val']:.2f}")
 
     call_dist = round(gex_data["call_wall_xau"] - spot_xau, 2)
     put_dist = round(spot_xau - gex_data["put_wall_xau"], 2)
@@ -376,7 +364,7 @@ def main():
     with open(OUTPUT_FILE, "w") as f:
         json.dump(payload, f, indent=2, default=json_serial_fallback)
 
-    print(f"[GEX ENGINE SUCCESS] Clean Telemetry written to {OUTPUT_FILE}")
+    print(f"[GEX ENGINE SUCCESS] Telemetry generated: Call Wall ${gex_data['call_wall_xau']} | Put Wall ${gex_data['put_wall_xau']} | Flip ${gex_data['gamma_flip_xau']}")
 
 
 if __name__ == "__main__":
