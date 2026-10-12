@@ -5,6 +5,7 @@ Order Flow Confluence Execution Engine (Jev Model)
 - Integrated with High-Impact Macro Economic News Blackout Gatekeeper
 - Integrated with Remote Telegram Control Center (/pause & /resume support)
 - Dynamic Volatility Scaling: Live 14-period 5M ATR Dynamic Stop-Loss Buffer
+- L2/L3 DOM Proxy: Microstructure Order Flow Imbalance & Wick Absorption Gatekeeper
 - Hardened SL/TP Sanity Checks (Prevents Inverted SL on Longs/Shorts)
 """
 
@@ -70,6 +71,77 @@ def compute_dynamic_atr_buffer(ticker_symbol: str = "GC=F") -> float:
         return 8.50
 
 
+def compute_micro_order_flow_imbalance(ticker_symbol: str = "GC=F", lookback_bars: int = 3) -> dict:
+    """
+    L2/L3 DOM Order Book Proxy:
+    Measures aggressive volume delta, wick absorption, and liquidity rejection
+    using recent 5-minute intraday bars.
+    """
+    try:
+        t = yf.Ticker(ticker_symbol)
+        df = t.history(period="1d", interval="5m")
+
+        if df.empty or len(df) < lookback_bars:
+            return {
+                "dom_bias": "NEUTRAL",
+                "imbalance_ratio": 1.0,
+                "net_delta_pressure": "BALANCED"
+            }
+
+        recent_bars = df.tail(lookback_bars)
+        total_bid_vol = 0.0
+        total_offer_vol = 0.0
+
+        for _, row in recent_bars.iterrows():
+            o, h, l, c, v = row["Open"], row["High"], row["Low"], row["Close"], row["Volume"]
+            bar_range = h - l
+
+            if bar_range <= 0 or v <= 0:
+                continue
+
+            upper_wick = h - max(o, c)
+            lower_wick = min(o, c) - l
+            body = abs(c - o)
+
+            if c >= o:
+                bid_part = lower_wick + (0.75 * body)
+                offer_part = upper_wick + (0.25 * body)
+            else:
+                bid_part = lower_wick + (0.25 * body)
+                offer_part = upper_wick + (0.75 * body)
+
+            total_bid_vol += (bid_part / bar_range) * v
+            total_offer_vol += (offer_part / bar_range) * v
+
+        if total_offer_vol <= 0:
+            imbalance_ratio = 3.0
+        else:
+            imbalance_ratio = round(total_bid_vol / total_offer_vol, 2)
+
+        # Threshold classification
+        if imbalance_ratio >= 1.60:
+            dom_bias = "INSTITUTIONAL_BID_ABSORPTION"
+            pressure = "AGGRESSIVE_BUYING_FLOW"
+        elif imbalance_ratio <= 0.62:
+            dom_bias = "INSTITUTIONAL_OFFER_ABSORPTION"
+            pressure = "AGGRESSIVE_SELLING_FLOW"
+        else:
+            dom_bias = "TWO_WAY_AUCTION_BALANCED"
+            pressure = "EQUILIBRIUM"
+
+        return {
+            "dom_bias": dom_bias,
+            "imbalance_ratio": imbalance_ratio,
+            "net_delta_pressure": pressure
+        }
+    except Exception:
+        return {
+            "dom_bias": "NEUTRAL",
+            "imbalance_ratio": 1.0,
+            "net_delta_pressure": "FALLBACK"
+        }
+
+
 def load_state() -> dict:
     if os.path.exists(TRADES_FILE):
         try:
@@ -120,6 +192,7 @@ def handle_telegram_commands(state: dict, spot: float):
                         f"• PnL: <code>{'+' if fl_pnl >= 0 else ''}${fl_pnl:.2f}</code>\n"
                         f"• Target TP: <code>${active['tp']:.2f}</code> | SL: <code>${active['sl']:.2f}</code>\n"
                         f"• Dynamic Buffer: <code>${active.get('atr_buffer', 8.50):.2f}</code>\n"
+                        f"• DOM Imbalance: <code>{active.get('dom_flow', 'N/A')}</code>\n"
                         f"• Neural AI Score: <code>{active.get('kronos_score', 'N/A')}</code>\n"
                         f"• Setup: <code>{active.get('reason')}</code>"
                     )
@@ -269,11 +342,12 @@ def run_jev_cycle():
             send_tg_msg(f"{icon} <b>JEV TRADE CLOSED: {reason}</b>\n• PnL: <code>{'+' if pnl >= 0 else ''}${pnl:.2f}</code>\n• Balance: <code>${state['balance']:.2f}</code>")
         return
 
-    # 2. Gatekeepers
+    # 2. Gatekeeper 1: Macro News Blackout
     if news_blackout:
         print(f"[JEV ENGINE] Execution blocked: News Blackout Active ({event_name}).")
         return
 
+    # 3. Gatekeeper 2: Remote Telegram Pause
     if os.path.exists(CONTROL_FILE):
         try:
             with open(CONTROL_FILE, "r") as cf:
@@ -283,10 +357,11 @@ def run_jev_cycle():
         except Exception:
             pass
 
-    # 3. Dynamic ATR Volatility Scaling
+    # 4. Dynamic Volatility & DOM Imbalance Engine
     atr_buffer = compute_dynamic_atr_buffer()
+    dom_data = compute_micro_order_flow_imbalance()
 
-    # 4. Confluence Setup Identification
+    # 5. Confluence Setup Identification
     side = None
     sl = None
     tp = None
@@ -322,13 +397,22 @@ def run_jev_cycle():
     if not side or not sl or not tp:
         return
 
+    # 6. L2/L3 DOM Gatekeeper Protection (Blocks trades against heavy limit walls)
+    if side == "BUY" and dom_data["dom_bias"] == "INSTITUTIONAL_OFFER_ABSORPTION":
+        print(f"[JEV DOM GATE] BUY rejected: Strong Offer Absorption detected (IR: {dom_data['imbalance_ratio']})")
+        return
+
+    if side == "SELL" and dom_data["dom_bias"] == "INSTITUTIONAL_BID_ABSORPTION":
+        print(f"[JEV DOM GATE] SELL rejected: Strong Bid Absorption detected (IR: {dom_data['imbalance_ratio']})")
+        return
+
     # Hard Directional SL Sanity Guard
     if side == "BUY" and sl >= spot:
         return
     if side == "SELL" and sl <= spot:
         return
 
-    # 5. Kronos Neural Gatekeeper Filter
+    # 7. Kronos Neural Gatekeeper Filter
     if side == "BUY" and kronos_bull_prob < 0.40:
         print(f"[JEV GATEKEEPER] BUY Setup rejected: Kronos Bearish Dump ({kronos_bull_prob:.2f})")
         return
@@ -337,7 +421,7 @@ def run_jev_cycle():
         print(f"[JEV GATEKEEPER] SELL Setup rejected: Kronos Bullish Rally ({kronos_bull_prob:.2f})")
         return
 
-    # 6. Probabilistic Fractional Sizing
+    # 8. Probabilistic Fractional Sizing
     base_risk = 0.010
     if (side == "BUY" and kronos_bull_prob >= 0.70) or (side == "SELL" and kronos_bull_prob <= 0.30):
         risk_pct = 0.015
@@ -363,6 +447,7 @@ def run_jev_cycle():
         "units": units,
         "initial_risk": risk_dist,
         "atr_buffer": atr_buffer,
+        "dom_flow": f"{dom_data['dom_bias']} (IR {dom_data['imbalance_ratio']})",
         "sl": sl,
         "tp": tp,
         "rr": rr,
@@ -384,6 +469,7 @@ def run_jev_cycle():
         f"💵 <b>Fill Spot</b>: <code>${spot:.2f}</code> ({units} oz | {risk_pct*100:.2f}% Risk)\n"
         f"🛑 <b>Stop Loss</b>: <code>${sl:.2f}</code> (ATR Dyn Buffer: <code>${atr_buffer:.2f}</code>)\n"
         f"🎯 <b>Target POC</b>: <code>${tp:.2f}</code> (R:R 1:{rr})\n"
+        f"🌊 <b>DOM Flow</b>: <code>{dom_data['dom_bias']} (IR: {dom_data['imbalance_ratio']})</code>\n"
         f"🧠 <b>Kronos Neural Gate</b>: <code>{kronos_regime} ({kronos_bull_prob:.2f})</code>\n"
         f"📊 <b>Profile Context</b>: VAL ${val:.2f} | POC ${poc:.2f} | VAH ${vah:.2f}\n"
         f"⏰ <b>Executed At</b>: <code>{now_utc}</code>"
