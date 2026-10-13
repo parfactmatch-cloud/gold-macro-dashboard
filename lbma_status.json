@@ -1,0 +1,9 @@
+{
+  "is_weekend": false,
+  "phase": "CONTINUOUS_TRADING",
+  "execution_policy": "NORMAL",
+  "rr_multiplier": 1.0,
+  "risk_weight": 1.0,
+  "ist_time": "10:55 PM IST",
+  "notes": "Standard auction flow. No active benchmark auction distortions."
+}
