@@ -3,6 +3,8 @@ jev_paper_engine.py
 Order Flow Confluence Execution Engine (Jev Model)
 - Integrated with Kronos K-Line Foundation Model Neural Gatekeeper
 - Integrated with High-Impact Macro Economic News Blackout Gatekeeper
+- Integrated with LBMA Benchmark Auction Timing Engine (IST Native)
+- Integrated with L2/L3 DOM Imbalance & CVD Divergence Microstructure Engine
 - Integrated with Remote Telegram Control Center (/pause & /resume support)
 - Dynamic Volatility Scaling: Live 14-period 5M ATR Dynamic Stop-Loss Buffer
 - Hardened SL/TP Sanity Checks (Prevents Inverted SL on Longs/Shorts)
@@ -15,6 +17,17 @@ import requests
 import pandas as pd
 import yfinance as yf
 from datetime import datetime, timezone
+
+# Import micro-engines
+try:
+    from order_flow_dom_engine import get_order_flow_telemetry
+except ImportError:
+    get_order_flow_telemetry = None
+
+try:
+    from lbma_benchmark_engine import inspect_lbma_auction_window
+except ImportError:
+    inspect_lbma_auction_window = None
 
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 GEX_FILE = os.path.join(SCRIPT_DIR, "gex_levels.json")
@@ -38,15 +51,12 @@ def send_tg_msg(text: str):
 
 
 def compute_dynamic_atr_buffer(ticker_symbol: str = "GC=F") -> float:
-    """
-    Calculates 14-period Average True Range (ATR) on 5M timeframe.
-    Dynamically scales Stop-Loss buffer based on real-time market volatility.
-    """
+    """Calculates 14-period ATR on 5M timeframe for dynamic stop buffer."""
     try:
         t = yf.Ticker(ticker_symbol)
         df = t.history(period="1d", interval="5m")
         if df.empty or len(df) < 15:
-            return 8.50  # Balanced fallback
+            return 8.50
 
         high = df["High"]
         low = df["Low"]
@@ -62,9 +72,7 @@ def compute_dynamic_atr_buffer(ticker_symbol: str = "GC=F") -> float:
         if math.isnan(atr) or atr <= 0:
             return 8.50
 
-        # 1.25x ATR multiplier to stay outside microstructure noise
         adaptive_buffer = round(float(atr * 1.25), 2)
-        # Bounded between $4.50 and $18.00
         return max(4.50, min(adaptive_buffer, 18.00))
     except Exception:
         return 8.50
@@ -120,6 +128,7 @@ def handle_telegram_commands(state: dict, spot: float):
                         f"• PnL: <code>{'+' if fl_pnl >= 0 else ''}${fl_pnl:.2f}</code>\n"
                         f"• Target TP: <code>${active['tp']:.2f}</code> | SL: <code>${active['sl']:.2f}</code>\n"
                         f"• Dynamic Buffer: <code>${active.get('atr_buffer', 8.50):.2f}</code>\n"
+                        f"• DOM / CVD: <code>{active.get('order_flow_flow', 'N/A')}</code>\n"
                         f"• Neural AI Score: <code>{active.get('kronos_score', 'N/A')}</code>\n"
                         f"• Setup: <code>{active.get('reason')}</code>"
                     )
@@ -127,7 +136,7 @@ def handle_telegram_commands(state: dict, spot: float):
                     reply = (
                         f"💤 <b>NO ACTIVE TRADES</b>\n"
                         f"• Portfolio: <code>${state.get('balance', 10000.0):.2f}</code>\n"
-                        f"• Status: <code>SCANNING_GEX_KRONOS_CONFLUENCE</code>"
+                        f"• Status: <code>SCANNING_GEX_DOM_LBMA_CONFLUENCE</code>"
                     )
                 send_tg_msg(reply)
 
@@ -182,7 +191,42 @@ def run_jev_cycle():
     val = float(of.get("session_val", spot - 15.0))
     vah = float(of.get("session_vah", spot + 15.0))
 
-    # Ingest Kronos Signals
+    # 1. Ingest L2/L3 DOM & CVD Order Flow Telemetry
+    dom_bias = "NEUTRAL"
+    imbalance_ratio = 1.0
+    cvd_divergence = "NONE"
+    cvd_trend = "FLAT"
+    atr_buffer = compute_dynamic_atr_buffer()
+
+    if get_order_flow_telemetry:
+        try:
+            of_telemetry = get_order_flow_telemetry()
+            dom_metrics = of_telemetry.get("dom_metrics", {})
+            dom_bias = dom_metrics.get("dom_bias", "NEUTRAL")
+            imbalance_ratio = dom_metrics.get("imbalance_ratio", 1.0)
+            atr_buffer = dom_metrics.get("atr_buffer", atr_buffer)
+            cvd_data = dom_metrics.get("cvd_telemetry", {})
+            cvd_divergence = cvd_data.get("cvd_divergence", "NONE")
+            cvd_trend = cvd_data.get("cvd_trend", "FLAT")
+        except Exception as e:
+            print(f"[DOM TELEMETRY EXCEPTION] {e}")
+
+    # 2. Ingest LBMA Benchmark Auction Windows (IST Native)
+    lbma_policy = "NORMAL"
+    lbma_phase = "CONTINUOUS_TRADING"
+    lbma_risk_mult = 1.0
+    lbma_rr_mult = 1.0
+    if inspect_lbma_auction_window:
+        try:
+            lbma_status = inspect_lbma_auction_window()
+            lbma_policy = lbma_status.get("execution_policy", "NORMAL")
+            lbma_phase = lbma_status.get("phase", "CONTINUOUS_TRADING")
+            lbma_risk_mult = lbma_status.get("risk_weight", 1.0)
+            lbma_rr_mult = lbma_status.get("rr_multiplier", 1.0)
+        except Exception as e:
+            print(f"[LBMA RADAR EXCEPTION] {e}")
+
+    # 3. Ingest Kronos Signals
     kronos_bull_prob = 0.50
     kronos_regime = "NEUTRAL"
     if os.path.exists(KRONOS_FILE):
@@ -194,7 +238,7 @@ def run_jev_cycle():
         except Exception:
             pass
 
-    # Ingest Macro High-Impact News Blackout Status
+    # 4. Ingest Macro High-Impact News Blackout Status
     news_blackout = False
     event_name = ""
     if os.path.exists(NEWS_FILE):
@@ -214,7 +258,7 @@ def run_jev_cycle():
 
     active = state.get("active_trade")
 
-    # 1. Active Position Lifecycle
+    # Active Position Lifecycle
     if active:
         side = active["side"]
         entry = active["entry_price"]
@@ -269,9 +313,13 @@ def run_jev_cycle():
             send_tg_msg(f"{icon} <b>JEV TRADE CLOSED: {reason}</b>\n• PnL: <code>{'+' if pnl >= 0 else ''}${pnl:.2f}</code>\n• Balance: <code>${state['balance']:.2f}</code>")
         return
 
-    # 2. Gatekeepers
+    # Master Execution Gatekeepers
     if news_blackout:
         print(f"[JEV ENGINE] Execution blocked: News Blackout Active ({event_name}).")
+        return
+
+    if lbma_policy == "TOTAL_EXECUTION_BLACKOUT":
+        print(f"[JEV ENGINE] Execution blocked: Live LBMA Benchmark Auction in progress ({lbma_phase}).")
         return
 
     if os.path.exists(CONTROL_FILE):
@@ -283,10 +331,7 @@ def run_jev_cycle():
         except Exception:
             pass
 
-    # 3. Dynamic ATR Volatility Scaling
-    atr_buffer = compute_dynamic_atr_buffer()
-
-    # 4. Confluence Setup Identification
+    # Confluence Setup Identification
     side = None
     sl = None
     tp = None
@@ -322,22 +367,48 @@ def run_jev_cycle():
     if not side or not sl or not tp:
         return
 
+    # LBMA Pre-Fix Inventory Shading Guard
+    if lbma_policy == "BLOCK_MEAN_REVERSION_MOMENTUM_ONLY" and "ABSORPTION" in reason:
+        print(f"[JEV LBMA GATE] Fade rejected: Pre-Fix directional inventory ramp in progress ({lbma_phase}).")
+        return
+
+    # L2/L3 DOM Imbalance & CVD Divergence Gatekeepers
+    if side == "BUY":
+        if dom_bias == "INSTITUTIONAL_OFFER_ABSORPTION":
+            print(f"[JEV DOM GATE] BUY rejected: Strong Offer Absorption (IR: {imbalance_ratio})")
+            return
+        if cvd_divergence == "BEARISH_EXHAUSTION_DIV":
+            print("[JEV CVD GATE] BUY rejected: Bearish CVD Exhaustion Divergence active.")
+            return
+        if cvd_divergence == "BULLISH_ABSORPTION_DIV":
+            reason += "_CVD_ABSORBED"
+
+    if side == "SELL":
+        if dom_bias == "INSTITUTIONAL_BID_ABSORPTION":
+            print(f"[JEV DOM GATE] SELL rejected: Strong Bid Absorption (IR: {imbalance_ratio})")
+            return
+        if cvd_divergence == "BULLISH_ABSORPTION_DIV":
+            print("[JEV CVD GATE] SELL rejected: Bullish CVD Absorption Divergence active.")
+            return
+        if cvd_divergence == "BEARISH_EXHAUSTION_DIV":
+            reason += "_CVD_EXHAUSTED"
+
     # Hard Directional SL Sanity Guard
     if side == "BUY" and sl >= spot:
         return
     if side == "SELL" and sl <= spot:
         return
 
-    # 5. Kronos Neural Gatekeeper Filter
+    # Kronos Neural Confidence Filter
     if side == "BUY" and kronos_bull_prob < 0.40:
-        print(f"[JEV GATEKEEPER] BUY Setup rejected: Kronos Bearish Dump ({kronos_bull_prob:.2f})")
+        print(f"[JEV GATEKEEPER] BUY Setup rejected: Kronos Bearish Bias ({kronos_bull_prob:.2f})")
         return
 
     if side == "SELL" and kronos_bull_prob > 0.60:
-        print(f"[JEV GATEKEEPER] SELL Setup rejected: Kronos Bullish Rally ({kronos_bull_prob:.2f})")
+        print(f"[JEV GATEKEEPER] SELL Setup rejected: Kronos Bullish Bias ({kronos_bull_prob:.2f})")
         return
 
-    # 6. Probabilistic Fractional Sizing
+    # Probabilistic Fractional Sizing & LBMA Scaling
     base_risk = 0.010
     if (side == "BUY" and kronos_bull_prob >= 0.70) or (side == "SELL" and kronos_bull_prob <= 0.30):
         risk_pct = 0.015
@@ -346,10 +417,18 @@ def run_jev_cycle():
     else:
         risk_pct = base_risk
 
+    # Apply LBMA Phase Weight
+    risk_pct = risk_pct * lbma_risk_mult
     risk_cash = state["balance"] * risk_pct
     risk_dist = abs(spot - sl)
     if risk_dist <= 0:
         return
+
+    # Target Expansion during Post-Fix Elastic Snap-Back
+    if lbma_rr_mult > 1.0:
+        expanded_target_dist = abs(tp - spot) * lbma_rr_mult
+        tp = round(spot + expanded_target_dist if side == "BUY" else spot - expanded_target_dist, 2)
+        reason += f"_{lbma_phase}"
 
     rr = round(abs(tp - spot) / risk_dist, 2)
     if rr < 1.30:
@@ -363,11 +442,13 @@ def run_jev_cycle():
         "units": units,
         "initial_risk": risk_dist,
         "atr_buffer": atr_buffer,
+        "order_flow_flow": f"{dom_bias} (IR {imbalance_ratio}) | CVD: {cvd_divergence}",
         "sl": sl,
         "tp": tp,
         "rr": rr,
         "reason": reason,
         "kronos_score": f"{kronos_regime} ({kronos_bull_prob:.2f})",
+        "lbma_phase": lbma_phase,
         "be_locked": False,
         "partial_taken": False,
         "opened_at": now_utc
@@ -384,6 +465,9 @@ def run_jev_cycle():
         f"💵 <b>Fill Spot</b>: <code>${spot:.2f}</code> ({units} oz | {risk_pct*100:.2f}% Risk)\n"
         f"🛑 <b>Stop Loss</b>: <code>${sl:.2f}</code> (ATR Dyn Buffer: <code>${atr_buffer:.2f}</code>)\n"
         f"🎯 <b>Target POC</b>: <code>${tp:.2f}</code> (R:R 1:{rr})\n"
+        f"🌊 <b>DOM Flow</b>: <code>{dom_bias} (IR: {imbalance_ratio})</code>\n"
+        f"📈 <b>CVD State</b>: <code>{cvd_trend} | {cvd_divergence}</code>\n"
+        f"🏛 <b>LBMA Phase</b>: <code>{lbma_phase}</code>\n"
         f"🧠 <b>Kronos Neural Gate</b>: <code>{kronos_regime} ({kronos_bull_prob:.2f})</code>\n"
         f"📊 <b>Profile Context</b>: VAL ${val:.2f} | POC ${poc:.2f} | VAH ${vah:.2f}\n"
         f"⏰ <b>Executed At</b>: <code>{now_utc}</code>"
