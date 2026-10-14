@@ -1,4 +1,4 @@
-"""
+    """
 jev_paper_engine.py
 Order Flow Confluence Execution Engine (Jev Model)
 - Integrated with Kronos K-Line Foundation Model Neural Gatekeeper
@@ -7,6 +7,7 @@ Order Flow Confluence Execution Engine (Jev Model)
 - Integrated with L2/L3 DOM Imbalance & CVD Divergence Microstructure Engine
 - Integrated with Remote Telegram Control Center (/pause & /resume support)
 - Dynamic Volatility Scaling: Live 14-period 5M ATR Dynamic Stop-Loss Buffer
+- Short Gamma Breakdown Execution: Captures rapid downside liquidation cascades
 - Hardened SL/TP Sanity Checks (Prevents Inverted SL on Longs/Shorts)
 """
 
@@ -337,17 +338,29 @@ def run_jev_cycle():
     tp = None
     reason = None
 
-    # Long Setup: Price testing floor + VAL absorption
-    if (spot <= (put_wall + 8.0) or spot <= (val + 4.0)) and not blast:
-        target_tp = round(poc, 2)
-        if target_tp > spot + 4.0:
-            side = "BUY"
-            floor_ref = min(spot, put_wall, val)
-            sl = round(floor_ref - atr_buffer, 2)
-            tp = target_tp
-            reason = "CONFLUENCE_PUT_WALL_VAL_ABSORPTION"
+    # Setup 1: Short Gamma Breakdown Cascade (Floor & Gamma Flip Breached)
+    if spot < put_wall and spot < gamma_flip:
+        side = "SELL"
+        sl = round(min(put_wall + atr_buffer, gamma_flip + 2.0), 2)
+        # Expansion target projecting short gamma momentum
+        tp = round(spot - (atr_buffer * 3.5), 2)
+        reason = "SHORT_GAMMA_WALL_BREAKDOWN_EXPANSION"
 
-    # Short Setup: Price testing ceiling + VAH exhaustion
+    # Setup 2: Long Reversion (Put Wall or VAL Absorption in Non-Blast Mode)
+    elif (spot <= (put_wall + 8.0) or spot <= (val + 4.0)) and not blast:
+        # Invalidation Guard: agar spot gamma_flip ke niche slice ho chuka hai to bounce buy block
+        if spot < gamma_flip:
+            print("[JEV GATE] Long setup skipped: Spot is below Gamma Neutral Flip (Breakdown danger).")
+        else:
+            target_tp = round(poc, 2)
+            if target_tp > spot + 4.0:
+                side = "BUY"
+                floor_ref = min(spot, put_wall, val)
+                sl = round(floor_ref - atr_buffer, 2)
+                tp = target_tp
+                reason = "CONFLUENCE_PUT_WALL_VAL_ABSORPTION"
+
+    # Setup 3: Short Reversion (Call Wall or VAH Exhaustion in Non-Blast Mode)
     elif (spot >= (call_wall - 8.0) or spot >= (vah - 4.0)) and not blast:
         target_tp = round(poc, 2)
         if target_tp < spot - 4.0:
@@ -357,7 +370,7 @@ def run_jev_cycle():
             tp = target_tp
             reason = "CONFLUENCE_CALL_WALL_VAH_EXHAUSTION"
 
-    # Momentum Setup: Gamma Blast Expansion
+    # Setup 4: Bullish Gamma Blast Expansion (Upside Surge)
     elif blast and abs(dex) > 8.0 and spot > gamma_flip:
         side = "BUY"
         sl = round(spot - (atr_buffer * 1.5), 2)
@@ -384,7 +397,7 @@ def run_jev_cycle():
             reason += "_CVD_ABSORBED"
 
     if side == "SELL":
-        if dom_bias == "INSTITUTIONAL_BID_ABSORPTION":
+        if dom_bias == "INSTITUTIONAL_BID_ABSORPTION" and "BREAKDOWN" not in reason:
             print(f"[JEV DOM GATE] SELL rejected: Strong Bid Absorption (IR: {imbalance_ratio})")
             return
         if cvd_divergence == "BULLISH_ABSORPTION_DIV":
@@ -400,13 +413,18 @@ def run_jev_cycle():
         return
 
     # Kronos Neural Confidence Filter
-    if side == "BUY" and kronos_bull_prob < 0.40:
-        print(f"[JEV GATEKEEPER] BUY Setup rejected: Kronos Bearish Bias ({kronos_bull_prob:.2f})")
-        return
-
-    if side == "SELL" and kronos_bull_prob > 0.60:
-        print(f"[JEV GATEKEEPER] SELL Setup rejected: Kronos Bullish Bias ({kronos_bull_prob:.2f})")
-        return
+    # Breakdown setups are aggressive momentum trades; require bear probability >= 0.40
+    if reason.startswith("SHORT_GAMMA_WALL_BREAKDOWN"):
+        if kronos_bull_prob > 0.65:
+            print(f"[JEV GATEKEEPER] Breakdown SELL rejected: Kronos high bullish score ({kronos_bull_prob:.2f})")
+            return
+    else:
+        if side == "BUY" and kronos_bull_prob < 0.40:
+            print(f"[JEV GATEKEEPER] BUY Setup rejected: Kronos Bearish Bias ({kronos_bull_prob:.2f})")
+            return
+        if side == "SELL" and kronos_bull_prob > 0.60:
+            print(f"[JEV GATEKEEPER] SELL Setup rejected: Kronos Bullish Bias ({kronos_bull_prob:.2f})")
+            return
 
     # Probabilistic Fractional Sizing & LBMA Scaling
     base_risk = 0.010
@@ -425,7 +443,7 @@ def run_jev_cycle():
         return
 
     # Target Expansion during Post-Fix Elastic Snap-Back
-    if lbma_rr_mult > 1.0:
+    if lbma_rr_mult > 1.0 and "BREAKDOWN" not in reason:
         expanded_target_dist = abs(tp - spot) * lbma_rr_mult
         tp = round(spot + expanded_target_dist if side == "BUY" else spot - expanded_target_dist, 2)
         reason += f"_{lbma_phase}"
