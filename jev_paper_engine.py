@@ -1,4 +1,4 @@
-    """
+"""
 jev_paper_engine.py
 Order Flow Confluence Execution Engine (Jev Model)
 - Integrated with Kronos K-Line Foundation Model Neural Gatekeeper
