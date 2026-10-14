@@ -1,23 +1,6 @@
 {
-  "balance": 10074.950700000001,
-  "active_trade": {
-    "trade_id": "JEV-1791912354",
-    "side": "BUY",
-    "entry_price": 4156.45,
-    "units": 2.04,
-    "initial_risk": 37.0,
-    "atr_buffer": 4.5,
-    "order_flow_flow": "INSTITUTIONAL_BID_ABSORPTION (IR 1.71) | CVD: NONE",
-    "sl": 4119.45,
-    "tp": 4209.5,
-    "rr": 1.43,
-    "reason": "CONFLUENCE_PUT_WALL_VAL_ABSORPTION",
-    "kronos_score": "CHOP_CONSOLIDATION (0.51)",
-    "lbma_phase": "CONTINUOUS_TRADING",
-    "be_locked": false,
-    "partial_taken": false,
-    "opened_at": "17:25 UTC"
-  },
+  "balance": 9999.470700000002,
+  "active_trade": null,
   "closed_trades": [
     {
       "trade_id": "JEV-1791763283",
@@ -36,7 +19,28 @@
       "exit_price": 4189.53,
       "pnl": 74.95,
       "exit_reason": "STOP_LOSS_HIT"
+    },
+    {
+      "trade_id": "JEV-1791912354",
+      "side": "BUY",
+      "entry_price": 4156.45,
+      "units": 2.04,
+      "initial_risk": 37.0,
+      "atr_buffer": 4.5,
+      "order_flow_flow": "INSTITUTIONAL_BID_ABSORPTION (IR 1.71) | CVD: NONE",
+      "sl": 4119.45,
+      "tp": 4209.5,
+      "rr": 1.43,
+      "reason": "CONFLUENCE_PUT_WALL_VAL_ABSORPTION",
+      "kronos_score": "CHOP_CONSOLIDATION (0.51)",
+      "lbma_phase": "CONTINUOUS_TRADING",
+      "be_locked": false,
+      "partial_taken": false,
+      "opened_at": "17:25 UTC",
+      "exit_price": 4084.47,
+      "pnl": -75.48,
+      "exit_reason": "STOP_LOSS_HIT"
     }
   ],
-  "last_update_id": 21400134
+  "last_update_id": 21400135
 }
