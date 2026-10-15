@@ -1,8 +1,8 @@
 {
-  "timestamp_utc": "2026-10-15 09:11:38 UTC",
+  "timestamp_utc": "2026-10-15 14:13:25 UTC",
   "kronos_status": "ACTIVE_EVALUATION",
   "predicted_regime": "CHOP_CONSOLIDATION",
-  "bullish_probability": 0.5,
-  "bearish_probability": 0.5,
-  "gatekeeper_approved": false
+  "bullish_probability": 0.4,
+  "bearish_probability": 0.6,
+  "gatekeeper_approved": true
 }

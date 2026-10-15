@@ -1,9 +1,9 @@
 {
   "is_weekend": false,
-  "phase": "PRE_AM_FIX_RAMP_SHADING",
-  "execution_policy": "BLOCK_MEAN_REVERSION_MOMENTUM_ONLY",
-  "rr_multiplier": 1.0,
-  "risk_weight": 0.7,
-  "ist_time": "02:41 PM IST",
-  "notes": "Pre-AM_FIX inventory shading active in London. Counter-trend fades blocked."
+  "phase": "POST_PM_FIX_ELASTIC_SNAPBACK",
+  "execution_policy": "FAVOR_REVERSION_EXPANDED_TARGETS",
+  "rr_multiplier": 1.65,
+  "risk_weight": 1.25,
+  "ist_time": "07:43 PM IST",
+  "notes": "PM_FIX auction completed. Imbalances snapping back toward session fair value."
 }
