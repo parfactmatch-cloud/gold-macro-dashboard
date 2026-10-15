@@ -1,9 +1,9 @@
 {
   "is_weekend": false,
-  "phase": "CONTINUOUS_TRADING",
-  "execution_policy": "NORMAL",
+  "phase": "PRE_AM_FIX_RAMP_SHADING",
+  "execution_policy": "BLOCK_MEAN_REVERSION_MOMENTUM_ONLY",
   "rr_multiplier": 1.0,
-  "risk_weight": 1.0,
-  "ist_time": "09:37 AM IST",
-  "notes": "Standard auction flow. No active benchmark auction distortions."
+  "risk_weight": 0.7,
+  "ist_time": "02:41 PM IST",
+  "notes": "Pre-AM_FIX inventory shading active in London. Counter-trend fades blocked."
 }
