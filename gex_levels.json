@@ -1,29 +1,29 @@
 {
-  "timestamp_utc": "2026-10-15 23:54:22 UTC",
+  "timestamp_utc": "2026-10-16 04:03:54 UTC",
   "status": "HEALTHY",
   "data_source": "TWELVE_DATA",
-  "spot_xau": 4158.35,
+  "spot_xau": 4181.83,
   "gld_close": 382.71,
-  "conv_ratio": 10.8655,
-  "call_wall_xau": 4183.23,
-  "put_wall_xau": 4128.9,
-  "gamma_flip_xau": 4136.9,
-  "net_dex_m": -1.1,
+  "conv_ratio": 10.9269,
+  "call_wall_xau": 4228.71,
+  "put_wall_xau": 4097.58,
+  "gamma_flip_xau": 4113.97,
+  "net_dex_m": 0.4,
   "net_gamma_regime": "LONG_GAMMA_MEAN_REVERT",
   "gamma_blast_active": false,
-  "call_distance_telemetry": "Call: +$24.88",
-  "put_distance_telemetry": "Put: -$29.45",
+  "call_distance_telemetry": "Call: +$46.88",
+  "put_distance_telemetry": "Put: -$84.25",
   "is_corridor_valid": true,
   "order_flow": {
-    "session_poc": 4174.5,
-    "session_vah": 4182.5,
-    "session_val": 4166.0,
+    "session_poc": 4159.5,
+    "session_vah": 4167.5,
+    "session_val": 4151.5,
     "profile_status": "CALCULATED",
-    "absorption_bias": "BULLISH_ABSORPTION"
+    "absorption_bias": "BEARISH_EXHAUSTION"
   },
   "lse_telemetry": {
     "lse_status": "ONLINE",
     "institutional_core": "LSE_QUANT_SYNCHRONIZED",
-    "order_flow_bias": "DISTRIBUTION"
+    "order_flow_bias": "ACCUMULATION"
   }
 }
