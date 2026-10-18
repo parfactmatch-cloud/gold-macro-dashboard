@@ -1,5 +1,5 @@
 {
-  "timestamp_utc": "2026-10-18 01:29:27 UTC",
+  "timestamp_utc": "2026-10-18 06:32:42 UTC",
   "status": "HEALTHY",
   "data_source": "TWELVE_DATA",
   "spot_xau": 4164.67,
@@ -15,11 +15,11 @@
   "put_distance_telemetry": "Put: -$76.42",
   "is_corridor_valid": true,
   "order_flow": {
-    "session_poc": 4205.5,
-    "session_vah": 4213.5,
-    "session_val": 4186.0,
+    "session_poc": 4155.5,
+    "session_vah": 4166.0,
+    "session_val": 4147.5,
     "profile_status": "CALCULATED",
-    "absorption_bias": "BULLISH_ABSORPTION"
+    "absorption_bias": "VALUE_ACCEPTED"
   },
   "lse_telemetry": {
     "lse_status": "ONLINE",
