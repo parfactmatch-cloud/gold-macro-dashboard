@@ -1,9 +1,9 @@
 {
   "is_weekend": false,
-  "phase": "LIVE_PM_FIX_AUCTION_MATCHING",
-  "execution_policy": "TOTAL_EXECUTION_BLACKOUT",
+  "phase": "CONTINUOUS_TRADING",
+  "execution_policy": "NORMAL",
   "rr_multiplier": 1.0,
-  "risk_weight": 0.0,
-  "ist_time": "07:31 PM IST",
-  "notes": "Live IBA matching round running for PM_FIX. Execution strictly paused."
+  "risk_weight": 1.0,
+  "ist_time": "01:28 AM IST",
+  "notes": "Standard auction flow. No active benchmark auction distortions."
 }
