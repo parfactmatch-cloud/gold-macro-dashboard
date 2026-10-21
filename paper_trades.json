@@ -1,21 +1,21 @@
 {
-  "balance": 9924.477200000003,
+  "balance": 10001.361200000003,
   "active_trade": {
     "trade_id": "JEV-1792501366",
     "side": "BUY",
     "entry_price": 4117.09,
-    "units": 8.61,
+    "units": 4.31,
     "initial_risk": 8.640000000000327,
     "atr_buffer": 8.64,
     "order_flow_flow": "TWO_WAY_AUCTION_BALANCED (IR 1.08) | CVD: NONE",
-    "sl": 4108.45,
+    "sl": 4117.09,
     "tp": 4139.5,
     "rr": 2.59,
     "reason": "CONFLUENCE_PUT_WALL_VAL_ABSORPTION",
     "kronos_score": "CHOP_CONSOLIDATION (0.55)",
     "lbma_phase": "CONTINUOUS_TRADING",
     "be_locked": false,
-    "partial_taken": false,
+    "partial_taken": true,
     "opened_at": "13:02 UTC"
   },
   "closed_trades": [
