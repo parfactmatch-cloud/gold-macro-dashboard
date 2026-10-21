@@ -1,13 +1,13 @@
 {
-  "timestamp_utc": "2026-10-21 04:54:26 UTC",
+  "timestamp_utc": "2026-10-21 09:57:07 UTC",
   "status": "HEALTHY",
   "data_source": "TWELVE_DATA",
-  "spot_xau": 4114.89,
-  "gld_close": 376.13,
+  "spot_xau": 4120.99,
+  "gld_close": 376.69,
   "conv_ratio": 10.94,
-  "call_wall_xau": 4149.89,
-  "put_wall_xau": 4079.89,
-  "gamma_flip_xau": 4102.89,
+  "call_wall_xau": 4155.99,
+  "put_wall_xau": 4085.99,
+  "gamma_flip_xau": 4108.99,
   "net_dex_m": -2.5,
   "net_gamma_regime": "LONG_GAMMA_MEAN_REVERT",
   "gamma_blast_active": false,
@@ -15,11 +15,11 @@
   "put_distance_telemetry": "Put: -$35.00",
   "is_corridor_valid": true,
   "order_flow": {
-    "session_poc": 4113.5,
-    "session_vah": 4125.0,
-    "session_val": 4105.5,
+    "session_poc": 4141.5,
+    "session_vah": 4149.5,
+    "session_val": 4133.5,
     "profile_status": "CALCULATED",
-    "absorption_bias": "VALUE_ACCEPTED"
+    "absorption_bias": "BULLISH_ABSORPTION"
   },
   "lse_telemetry": {
     "lse_status": "ONLINE",
