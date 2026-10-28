@@ -1,9 +1,9 @@
 {
   "is_weekend": false,
-  "phase": "CONTINUOUS_TRADING",
-  "execution_policy": "NORMAL",
-  "rr_multiplier": 1.0,
-  "risk_weight": 1.0,
-  "ist_time": "01:39 PM IST",
-  "notes": "Standard auction flow. No active benchmark auction distortions."
+  "phase": "POST_PM_FIX_ELASTIC_SNAPBACK",
+  "execution_policy": "FAVOR_REVERSION_EXPANDED_TARGETS",
+  "rr_multiplier": 1.65,
+  "risk_weight": 1.25,
+  "ist_time": "08:39 PM IST",
+  "notes": "PM_FIX auction completed. Imbalances snapping back toward session fair value."
 }
