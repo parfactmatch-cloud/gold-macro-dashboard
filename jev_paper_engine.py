@@ -24,7 +24,12 @@ try:
     from order_flow_dom_engine import get_order_flow_telemetry
 except ImportError:
     get_order_flow_telemetry = None
-
+    
+try:
+    from profile_tpo_guard_engine import inspect_profile_tpo_guards
+except ImportError:
+    inspect_profile_tpo_guards = None
+    
 try:
     from lbma_benchmark_engine import inspect_lbma_auction_window
 except ImportError:
