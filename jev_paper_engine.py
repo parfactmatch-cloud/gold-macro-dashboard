@@ -385,15 +385,16 @@ def run_jev_cycle():
     if not side or not sl or not tp:
         return
         
-    # Profile Shape & TPO Single Timeframing Guards
-    
+        # Profile Shape & TPO Single Timeframing Guards
     if inspect_profile_tpo_guards:
-    tpo_guards = inspect_profile_tpo_guards("GC=F") if side == "SELL" and "ABSORPTION" in reason and tpo_guards.get("block_short_fade"):
-        print(f"[TPO GATE] SELL Fade Blocked: {tpo_guards['profile_shape']} | {tpo_guards['single_timeframing']}")
-        return if side == "BUY" and "ABSORPTION" in reason and tpo_guards.get("block_long_bounce"):
-        print(f"[TPO GATE] BUY Bounce Blocked: {tpo_guards['profile_shape']} | {tpo_guards['single_timeframing']}")
-        return
-        
+        tpo_guards = inspect_profile_tpo_guards("GC=F")
+        if side == "SELL" and ("ABSORPTION" in reason or "EXHAUSTION" in reason) and tpo_guards.get("block_short_fade"):
+            print(f"[TPO GATE] SELL Fade Blocked: {tpo_guards['profile_shape']} | {tpo_guards['single_timeframing']}")
+            return
+        if side == "BUY" and "ABSORPTION" in reason and tpo_guards.get("block_long_bounce"):
+            print(f"[TPO GATE] BUY Bounce Blocked: {tpo_guards['profile_shape']} | {tpo_guards['single_timeframing']}")
+            return
+
     # LBMA Pre-Fix Inventory Shading Guard
     if lbma_policy == "BLOCK_MEAN_REVERSION_MOMENTUM_ONLY" and "ABSORPTION" in reason:
         print(f"[JEV LBMA GATE] Fade rejected: Pre-Fix directional inventory ramp in progress ({lbma_phase}).")
