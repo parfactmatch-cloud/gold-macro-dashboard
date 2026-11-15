@@ -1,121 +1,147 @@
-# Institutional Quant Engine: Gold (XAU/USD) Autonomous Execution Pipeline
-An institutional-grade, zero-infrastructure algorithmic pipeline engineered for spot Gold (XAU/USD) derivatives analysis and autonomous risk execution. The engine computes dynamic Black-Scholes-Merton (BSM) Gamma Exposure (GEX), evaluates Dealer Delta Exposure (DEX), tracks sovereign macro tailwinds via US 10-Year yields, and autonomously manages simulated paper orders via the **Jev Execution Model** with sub-tick risk controls.
-## Architecture Overview
-```text
- ┌──────────────────────┐   ┌──────────────────────┐   ┌──────────────────────┐
- │   Twelve Data Core   │   │  London Strat. Edge  │   │  Federal Reserve     │
- │  (Live Interbank XAU)│   │  (LSE Telemetry Core)│   │  (FRED US10Y Yield)  │
- └──────────┬───────────┘   └──────────┬───────────┘   └──────────┬───────────┘
-            │                          │                          │
-            ▼                          ▼                          ▼
- ┌────────────────────────────────────────────────────────────────────────────┐
- │               free_gex_engine.py (Continuous BSM Greek Core)               │
- │  - Real-time front-month COMEX (GC=F) & ETF Options chain calibration      │
- │  - Call/Put Wall identification, Absolute Gamma Flip, & Total Net DEX      │
- │  - Emits: gex_levels.json                                                  │
- └─────────────────────────────────────┬──────────────────────────────────────┘
-                                       │
-            ┌──────────────────────────┴──────────────────────────┐
-            ▼                                                     ▼
- ┌──────────────────────────────────────┐  ┌──────────────────────────────────┐
- │        telegram_engine.py            │  │       jev_paper_engine.py        │
- │  - FRED US10Y Macro integration      │  │  - Jev Model Entry/Exit Engine   │
- │  - Real-Time Market Radar Pulses     │  │  - Trailing Stop-Loss & BE Shield│
- │  - Gatekeeper Rejection telemetry    │  │  - 2-Way Interactive Bot (/close)│
- │  - Delivery to Telegram Channel/DM   │  │  - Emits: paper_trades.json      │
- └──────────────────────────────────────┘  └──────────────────────────────────┘
+# Gold Macro Dashboard: XAU/USD Paper-Trading Pipeline
 
-```
-## Core Capabilities
- * **Dynamic Multi-Source Ingestion**: Primary ingestion through Twelve Data API and London Strategic Edge (LSE) institutional feeds, with automated fallback routing to COMEX Front-Month Futures (GC=F) and Yahoo Forex tape (XAUUSD=X).
- * **Black-Scholes Options Gamma Engine**: Evaluates liquid open interest (OI) and implied volatility (IV) across short-dated maturities (\le 45\text{ DTE}) using normalized standard normal distributions:
-   
- * **Jev Model Execution Matrix**:
-   * **Put Wall Absorption**: Mean-reversion long execution upon confirmed dealer gamma defense at key floors.
-   * **Call Wall Exhaustion**: Structural mean-reversion short positions taken at implied liquidity ceilings.
-   * **Institutional Gamma Blast**: Momentum trend participation when market transitions to net short dealer gamma regimes accompanied by expanding directional DEX.
- * **Capital Protection & Trade Management**:
-   * Fixed 1.0\% account risk sizing per trade.
-   * Automated Breakeven Shield (SL to entry at 1:1.5\text{ R:R}).
-   * Scale-out take-profit mechanics (50\% position realized; 50\% runner on dynamic trailing ATR stops).
-   * Strict Gatekeeper filtering enforcing a minimum 1:1.30\text{ R:R} ratio.
- * **Interactive Bot Commands**: Send direct commands (/status, /close, /summary) to manage active orders and query win-rate analytics.
-## Project Structure
+A gold (XAU/USD) macro + options-gamma dashboard with a **paper-trading**
+engine. There is no broker integration and no live execution anywhere in
+this repository — the Jev engine paper-trades spot gold with virtual money.
+
+> ⚠️ **Security notice (Nov 2026):** a FRED API key was previously
+> hardcoded in `app.py` in this public repo. It has been removed — the key
+> now comes from the `FRED_API_KEY` environment variable / GitHub Secret.
+> **If you used that key anywhere else, rotate/revoke it in FRED** — it
+> was visible in the public git history and cannot be un-exposed by this
+> fix alone.
+
+## What it is — honestly
+
+- **Macro bias score** (`app.py`, Streamlit): US 10Y real yields, Fed net
+  liquidity, DXY, CFTC positioning, intermarket ratios. Max ±8.
+- **Dealer gamma levels** (`free_gex_engine.py`): Black-Scholes gamma from
+  the GLD options chain (a proxy for XAU), giving call wall / put wall /
+  gamma flip / net DEX, plus a session volume profile from COMEX GC=F.
+- **Kronos regime check** (`kronos_gatekeeper.py`): a **10-bar momentum
+  sigmoid, not a neural network**. It loads no model weights. Treat its
+  probability as a coarse directional filter.
+- **Jev paper engine** (`jev_paper_engine.py`): opens/manages one paper
+  position at a time with stop-loss, targets and a 50% scale-out at 1.5R,
+  gated by GEX walls, DOM/CVD, LBMA auction timing, TPO guards, Kronos
+  and a news blackout. Risk limits: max daily loss $500, max 3 trades/day,
+  balance floor $9,000 (see `config.py`; overridable by env vars).
+- **Telegram** (`telegram_engine.py` + `live_telegram_listener.py`):
+  radar/playbook broadcasts and commands. Commands are answered by ONE
+  shared poller (`telegram_commands.py`, shared offset in
+  `telegram_offset.json`) and **only from the configured
+  `TELEGRAM_CHAT_ID`** — anyone else's commands are ignored.
+- **Automation** (`.github/workflows/sync.yml`): every 15 minutes it runs
+  news → GEX → Kronos → Jev → Telegram and commits the state JSONs back
+  to `main`.
+
+## Known limitations (read before trusting the output)
+
+- GEX levels are computed from GLD options, not XAU options, and the
+  volume profile is a $1-bin approximation. When a feed fails, the engine
+  writes **synthetic** levels labelled `status: "DEGRADED_SYNTHETIC"` and
+  `synthetic: true` — the Jev engine will not open new trades off them.
+- "LSE institutional" telemetry is only as real as your `LSE_API_KEY`.
+  With no key it reports `UNAVAILABLE`, not ONLINE.
+- The HTML terminal's WebSocket (`index.html`) is an unauthenticated
+  public feed with no subscription — it is not a verified live stream.
+- The weekly report (`weekly_report.py`) reads the real paper-trades
+  ledger; run it manually or on a weekly schedule, not in the 15-minute loop.
+- There is no backtester and no test coverage of live data feeds; the
+  test suite covers logic only, with mocked data.
+
+## Project structure
+
 ```text
 .
-├── .github/
-│   └── workflows/
-│       └── sync.yml              # 15-minute GitHub Actions orchestration cron
-├── free_gex_engine.py            # BSM Greek calculation & corridor generation
-├── telegram_engine.py            # FRED telemetry & Telegram broadcaster
-├── jev_paper_engine.py           # Jev model execution engine & trade ledger
-├── gex_levels.json               # Computed institutional gamma barriers (auto-generated)
-├── paper_trades.json             # Live paper trading portfolio ledger (auto-generated)
-├── requirements.txt              # Core runtime dependencies
-└── README.md                     # Production system documentation
-
+├── .github/workflows/sync.yml     # 15-minute GitHub Actions orchestration
+├── app.py                         # Streamlit dashboard
+├── index.html                     # Static ARES-XAU web terminal
+├── free_gex_engine.py             # BSM gamma / volume profile
+├── kronos_gatekeeper.py           # Momentum regime check (not a neural model)
+├── jev_paper_engine.py            # Paper-trading engine & ledger
+├── telegram_engine.py             # Radar/playbook broadcaster + command handler
+├── telegram_commands.py           # Shared Telegram polling + sender verification
+├── live_telegram_listener.py      # Optional 24/7 Telegram listener (same shared offset)
+├── config.py                      # Central config & risk limits
+├── order_flow_dom_engine.py       # DOM proxy + real CVD telemetry
+├── profile_tpo_guard_engine.py    # Market-profile / TPO guards
+├── lbma_benchmark_engine.py       # LBMA auction timing (London-time windows)
+├── news_gatekeeper.py             # High-impact USD news blackout
+├── weekly_report.py               # Weekly audit from the paper-trades ledger
+├── gex_levels.json                # Computed gamma levels (auto-generated)
+├── paper_trades.json              # Paper-trading ledger (auto-generated)
+├── requirements.txt               # Pinned runtime dependencies
+├── requirements-dev.txt           # Test dependencies
+├── .env.example                   # Copy to .env (never commit .env)
+└── README.md
 ```
-## Prerequisites & Secret Configuration
-Configure the following encrypted credentials in your GitHub repository (**Settings \rightarrow Secrets and variables \rightarrow Actions \rightarrow Repository secrets**):
-| Secret Name | Provider / Source | Purpose |
-|---|---|---|
-| TWELVE_DATA_API_KEY | Twelve Data | Interbank real-time Gold spot tape (XAU/USD) |
-| LSE_API_KEY | London Strategic Edge | Institutional order-flow telemetry & status sync |
-| FRED_API_KEY | Federal Reserve (St. Louis) | Real-time US 10-Year Treasury Yield (DGS10) |
-| TELEGRAM_BOT_TOKEN | Telegram BotFather | Bot authentication token |
-| TELEGRAM_CHAT_ID | Telegram | Target Channel or Personal Chat ID for telemetry |
-## Installation & Local Development
-### 1. Clone & Set Up Environment
+
+## Prerequisites & secret configuration
+
+Set these as GitHub repository Secrets (**Settings → Secrets and
+variables → Actions → Repository secrets**) or in a local `.env` file
+(see `.env.example` — never commit `.env`):
+
+| Secret Name | Purpose |
+|---|---|
+| TWELVE_DATA_API_KEY | Twelve Data real-time gold spot (XAU/USD) |
+| LSE_API_KEY | London Strategic Edge quote (optional; without it LSE shows UNAVAILABLE) |
+| FRED_API_KEY | FRED US 10-Year Treasury Yield (DGS10) — **rotate the old hardcoded key** |
+| TELEGRAM_BOT_TOKEN | Telegram BotFather token |
+| TELEGRAM_CHAT_ID | The one chat allowed to send commands to the bot |
+
+## Installation & local development
+
 ```bash
-git clone https://github.com/<your-username>/<your-repo-name>.git
-cd <your-repo-name>
+git clone https://github.com/parfactmatch-cloud/gold-macro-dashboard.git
+cd gold-macro-dashboard
 
 python3 -m venv venv
 source venv/bin/activate  # On Windows: venv\Scripts\activate
 pip install -r requirements.txt
-
-```
-### 2. Environment Variable Setup
-Create a .env file in the project root:
-```bash
-export TWELVE_DATA_API_KEY="your_twelve_data_key"
-export LSE_API_KEY="your_lse_api_key"
-export FRED_API_KEY="your_fred_key"
-export TELEGRAM_BOT_TOKEN="your_bot_token"
-export TELEGRAM_CHAT_ID="your_chat_id"
-
-```
-Load the variables:
-```bash
+cp .env.example .env   # fill in your keys
 source .env
-
 ```
-### 3. Run Pipeline Manually
-Execute the sequence in order:
+
+Run the pipeline manually, in order:
+
 ```bash
-# 1. Fetch real-time market data & generate GEX levels
-python free_gex_engine.py
-
-# 2. Transmit Institutional Radar Pulse to Telegram
-python telegram_engine.py
-
-# 3. Process Jev model execution checks & update trade ledger
-python jev_paper_engine.py
-
+python free_gex_engine.py      # GEX levels -> gex_levels.json
+python kronos_gatekeeper.py    # momentum regime -> kronos_signal.json
+python news_gatekeeper.py      # news blackout -> news_status.json
+python jev_paper_engine.py     # paper-trade cycle -> paper_trades.json
+python telegram_engine.py      # radar/playbook + Telegram commands
 ```
-## Continuous Automation (GitHub Actions)
-The workflow defined in .github/workflows/sync.yml triggers automatically every 15 minutes (*/15 * * * *) on Ubuntu compute nodes:
- 1. **Environment Setup**: Provisions Python 3.10 and dependencies (numpy, pandas, scipy, yfinance, requests).
- 2. **Corridor Computation**: Runs free_gex_engine.py using live API secrets.
- 3. **Telemetry Broadcast**: Transmits radar updates and macro indicators via telegram_engine.py.
- 4. **Order Execution**: jev_paper_engine.py evaluates positions and executes paper orders.
- 5. **Ledger Commit**: Automatically commits mutated gex_levels.json and paper_trades.json back to the default branch using git-auto-commit-action.
-## Telegram Interactive Bot Reference
-Send commands directly to your configured Telegram bot:
- * /status — Displays current active trade metrics, entry price, stop-loss level, floating PnL, and Breakeven Shield status.
- * /close — Immediately closes any open paper trade at the current spot price and records realized PnL.
- * /summary — Outputs performance analytics, including cumulative balance, win/loss count, and percentage win rate.
-## Risk Disclaimer
-> **Notice**: This repository is designed for quantitative research, mathematical modeling, and paper-trading simulation only. Financial market trading, particularly in leveraged derivatives and spot commodities (XAU/USD), carries substantial capital risk. Test all strategies thoroughly in paper simulation before using them with live capital.
->
-> 
+
+Run the dashboard:
+
+```bash
+streamlit run app.py
+```
+
+Run the tests:
+
+```bash
+pip install -r requirements-dev.txt
+python -m pytest -q
+```
+
+## Telegram commands
+
+Send commands to your bot from the configured chat only:
+
+- `/levels` — call/put walls, gamma flip, volume profile
+- `/status` — active paper trade, entry, SL/TP, floating PnL
+- `/close` — close the open paper trade at the current spot
+- `/pause` / `/resume` — stop / restart fresh entries (open positions are still managed)
+- `/pnl` / `/summary` — balance, cumulative PnL, win rate
+- `/kronos` / `/ai` — Kronos momentum regime and probability
+
+## Risk disclaimer
+
+> This repository is for quantitative research, mathematical modeling,
+> and paper-trading simulation only. Financial market trading, particularly
+> in leveraged derivatives and spot commodities (XAU/USD), carries
+> substantial capital risk. Test all strategies thoroughly in paper
+> simulation before using them with live capital.
