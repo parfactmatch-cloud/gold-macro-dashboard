@@ -4,13 +4,6 @@ A gold (XAU/USD) macro + options-gamma dashboard with a **paper-trading**
 engine. There is no broker integration and no live execution anywhere in
 this repository — the Jev engine paper-trades spot gold with virtual money.
 
-> ⚠️ **Security notice (Nov 2026):** a FRED API key was previously
-> hardcoded in `app.py` in this public repo. It has been removed — the key
-> now comes from the `FRED_API_KEY` environment variable / GitHub Secret.
-> **If you used that key anywhere else, rotate/revoke it in FRED** — it
-> was visible in the public git history and cannot be un-exposed by this
-> fix alone.
-
 ## What it is — honestly
 
 - **Macro bias score** (`app.py`, Streamlit): US 10Y real yields, Fed net
