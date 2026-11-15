@@ -7,14 +7,19 @@ RAM usage: ~25 MB | Zero heavy dependencies (requests only)
 import os
 import time
 import json
+import logging
 import requests
+
+from telegram_commands import fetch_new_updates, log_unauthorized
+
+logger = logging.getLogger(__name__)
 
 TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN", "").strip()
 TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID", "").strip()
 
 # GitHub raw URL jahan se latest levels aur trades fetch honge
 # Apne github username aur repo name ke hisab se set karein
-GITHUB_RAW_BASE = os.getenv("GITHUB_RAW_BASE", "https://raw.githubusercontent.com/surfactmatch-cloud/gold-macro-dashboard/main")
+GITHUB_RAW_BASE = os.getenv("GITHUB_RAW_BASE", "https://raw.githubusercontent.com/parfactmatch-cloud/gold-macro-dashboard/main")
 
 
 def send_tg_msg(text: str):
@@ -30,7 +35,7 @@ def send_tg_msg(text: str):
     try:
         requests.post(url, json=payload, timeout=8)
     except Exception as e:
-        print(f"[TG POST ERROR] {e}")
+        logger.warning("[TG POST ERROR] %s", e)
 
 
 def fetch_remote_json(filename: str) -> dict:
@@ -46,26 +51,24 @@ def fetch_remote_json(filename: str) -> dict:
 
 def handle_commands():
     if not TELEGRAM_BOT_TOKEN:
-        print("[ERROR] TELEGRAM_BOT_TOKEN missing!")
+        logger.error("[ERROR] TELEGRAM_BOT_TOKEN missing!")
         return
 
-    print("🤖 Live 24/7 Telegram Listener Started on Botkeep...")
-    last_update_id = 0
+    logger.info("🤖 Live 24/7 Telegram Listener Started on Botkeep...")
+    logger.info(
+        "Using shared Telegram offset (telegram_commands.py): commands are "
+        "answered exactly once across this listener and telegram_engine.py."
+    )
 
     while True:
         try:
-            url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/getUpdates"
-            params = {"offset": last_update_id + 1, "timeout": 20}
-            res = requests.get(url, params=params, timeout=25)
-
-            if res.status_code != 200:
-                time.sleep(2)
-                continue
-
-            updates = res.json().get("result", [])
-            for u in updates:
-                last_update_id = u["update_id"]
-                msg = u.get("message", {})
+            # Shared offset: updates already consumed by telegram_engine.py
+            # are not re-answered here, and vice versa.
+            for update, authorized in fetch_new_updates():
+                if not authorized:
+                    log_unauthorized(update)
+                    continue
+                msg = update.get("message", {})
                 text = msg.get("text", "").strip().lower()
 
                 # /levels Command
@@ -93,17 +96,20 @@ def handle_commands():
                         f"• <b>POC</b>: <code>${poc:.2f}</code>\n"
                         f"• <b>VAL</b>: <code>${val:.2f}</code>"
                     )
+                    if gex.get("synthetic"):
+                        reply += "\n⚠️ <b>Levels are SYNTHETIC estimates, not live data.</b>"
                     send_tg_msg(reply)
 
-                # /kronos or /ai Command
+                # /kronos or /ai Command (momentum regime check, not a neural model)
                 elif text in ["/kronos", "/ai"]:
                     kdata = fetch_remote_json("kronos_signal.json")
                     k_regime = kdata.get("predicted_regime", "CHOP_CONSOLIDATION")
                     k_prob = float(kdata.get("bullish_probability", 0.50))
 
                     reply = (
-                        f"🤖 <b>KRONOS NEURAL STATUS (INSTANT)</b>\n"
+                        f"🤖 <b>KRONOS MOMENTUM STATUS (INSTANT)</b>\n"
                         f"━━━━━━━━━━━━━━━━━━━━━━━\n"
+                        f"• <b>Model</b>: 10-bar momentum sigmoid (not a neural network)\n"
                         f"• <b>Predicted Regime</b>: <code>{k_regime}</code>\n"
                         f"• <b>Bullish Probability</b>: <code>{k_prob*100:.1f}%</code>\n"
                         f"• <b>Bearish Probability</b>: <code>{(1.0-k_prob)*100:.1f}%</code>\n"
@@ -142,15 +148,18 @@ def handle_commands():
                             f"• Entry: <code>${active['entry_price']:.2f}</code>\n"
                             f"• Target TP: <code>${active['tp']:.2f}</code>\n"
                             f"• Stop Loss: <code>${active['sl']:.2f}</code>\n"
-                            f"• AI Bias: <code>{active.get('kronos_score', 'N/A')}</code>"
+                            f"• Kronos Momentum Bias: <code>{active.get('kronos_score', 'N/A')}</code>"
                         )
                     else:
                         reply = f"💤 <b>NO ACTIVE TRADES</b>\n• Portfolio: <code>${tdata.get('balance', 10000.0):.2f}</code>"
                     send_tg_msg(reply)
 
+            time.sleep(5)
         except Exception as e:
+            logger.warning("Listener error: %s", e)
             time.sleep(3)
 
 
 if __name__ == "__main__":
+    logging.basicConfig(level=logging.INFO, format="%(levelname)s %(name)s: %(message)s")
     handle_commands()
