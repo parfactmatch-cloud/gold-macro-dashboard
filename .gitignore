@@ -1,0 +1,24 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+
+# Secrets and local state — never commit these
+.env
+fyers_access_token.json
+
+# NOTE: telegram_offset.json is intentionally NOT ignored: it is the shared
+# Telegram getUpdates offset (see telegram_commands.py) and must persist
+# between workflow runs, exactly like bot_control.json. Without it, every
+# fresh checkout would re-answer old commands.
+
+# Local editor / OS
+.DS_Store
+.idea/
+.vscode/
+
+# NOTE: the auto-generated state JSONs (gex_levels.json, paper_trades.json,
+# kronos_signal.json, etc.) ARE intentionally committed by the sync
+# workflow, so they are not ignored here.
