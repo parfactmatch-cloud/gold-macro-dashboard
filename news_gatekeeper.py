@@ -8,10 +8,13 @@ Institutional High-Impact Economic Calendar Gatekeeper for Gold (XAU/USD)
 
 import os
 import json
+import logging
 import requests
 from datetime import datetime, timezone, timedelta
 
 OUTPUT_NEWS_FILE = "news_status.json"
+
+logger = logging.getLogger(__name__)
 
 TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN", "").strip()
 TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID", "").strip()
@@ -76,7 +79,7 @@ def check_economic_calendar() -> dict:
                     except Exception:
                         continue
     except Exception as e:
-        print(f"[NEWS GATEKEEPER WARN] Calendar fetch skipped/failed: {e}")
+        logger.warning("[NEWS GATEKEEPER WARN] Calendar fetch skipped/failed: %s", e)
 
     result = {
         "timestamp_utc": now_utc.strftime("%Y-%m-%d %H:%M:%S UTC"),
@@ -90,7 +93,7 @@ def check_economic_calendar() -> dict:
         json.dump(result, f, indent=2)
 
     if blackout_active:
-        print(f"[NEWS GATEKEEPER] BLACKOUT ACTIVE: {event_name} at {event_time_str}")
+        logger.info("[NEWS GATEKEEPER] BLACKOUT ACTIVE: %s at %s", event_name, event_time_str)
         alert = (
             f"⚠️ <b>MACRO HIGH-IMPACT NEWS BLACKOUT ACTIVE</b>\n"
             f"━━━━━━━━━━━━━━━━━━━━━━━\n"
@@ -100,10 +103,11 @@ def check_economic_calendar() -> dict:
         )
         send_tg_msg(alert)
     else:
-        print("[NEWS GATEKEEPER] Macro Calendar Clear. No USD high-impact event in window.")
+        logger.info("[NEWS GATEKEEPER] Macro Calendar Clear. No USD high-impact event in window.")
 
     return result
 
 
 if __name__ == "__main__":
+    logging.basicConfig(level=logging.INFO, format="%(levelname)s %(name)s: %(message)s")
     check_economic_calendar()     
