@@ -6,12 +6,15 @@ Institutional L2/L3 Microstructure Depth-of-Market (DOM) Proxy Layer
 - Telemetry: Dynamic Imbalance Ratio, Bid/Offer Absorption, Dynamic ATR Buffer
 """
 
+import logging
 import os
 import math
 import requests
 import pandas as pd
 import numpy as np
 import yfinance as yf
+
+logger = logging.getLogger(__name__)
 
 LSE_API_KEY = os.getenv("LSE_API_KEY", "").strip()
 
@@ -87,7 +90,12 @@ def analyze_l2_l3_microstructure(df: pd.DataFrame, lse_spot: float = 0.0) -> dic
             "net_delta_pressure": "BALANCED_EQUILIBRIUM",
             "atr_buffer": 8.50,
             "bid_volume": 0.0,
-            "offer_volume": 0.0
+            "offer_volume": 0.0,
+            "cvd_telemetry": {
+                "cvd": 0.0,
+                "cvd_trend": "FLAT",
+                "cvd_divergence": "NONE",
+            },
         }
 
     # 1. Compute Dynamic 14-period ATR Volatility
@@ -108,6 +116,31 @@ def analyze_l2_l3_microstructure(df: pd.DataFrame, lse_spot: float = 0.0) -> dic
     recent_bars = df.tail(3)
     total_bid_vol = 0.0
     total_offer_vol = 0.0
+
+    # Cumulative Volume Delta (CVD): per-bar signed volume from the same
+    # wick/body allocation used above, accumulated over the lookback.
+    # This used to be missing entirely — get_order_flow_telemetry()
+    # returned no "cvd_telemetry" key, so the Jev engine's CVD gates
+    # could never fire and always read FLAT / NONE.
+    cvd_series = []
+    running_cvd = 0.0
+    for _, row in df.iterrows():
+        o, h, l, c, v = row["Open"], row["High"], row["Low"], row["Close"], row["Volume"]
+        rng = h - l
+        if rng <= 0 or v <= 0:
+            cvd_series.append(running_cvd)
+            continue
+        upper_wick = h - max(o, c)
+        lower_wick = min(o, c) - l
+        body = abs(c - o)
+        if c >= o:
+            bid_part = lower_wick + (0.75 * body)
+            offer_part = upper_wick + (0.25 * body)
+        else:
+            bid_part = lower_wick + (0.25 * body)
+            offer_part = upper_wick + (0.75 * body)
+        running_cvd += ((bid_part - offer_part) / rng) * v
+        cvd_series.append(running_cvd)
 
     for _, row in recent_bars.iterrows():
         o, h, l, c, v = row["Open"], row["High"], row["Low"], row["Close"], row["Volume"]
@@ -147,13 +180,45 @@ def analyze_l2_l3_microstructure(df: pd.DataFrame, lse_spot: float = 0.0) -> dic
         dom_bias = "TWO_WAY_AUCTION_BALANCED"
         pressure = "EQUILIBRIUM"
 
+    # 4. CVD trend & divergence. Divergence compares the last 3 bars
+    # against the previous 3: price makes a lower low while CVD makes a
+    # higher low -> bullish absorption; price higher high while CVD
+    # lower high -> bearish exhaustion.
+    cvd_trend = "FLAT"
+    cvd_divergence = "NONE"
+    if len(cvd_series) >= 6 and len(df) >= 6:
+        closes = df["Close"].tolist()
+        cvd_now, cvd_prev = cvd_series[-1], cvd_series[-4]
+        cvd_delta = cvd_now - cvd_prev
+        if cvd_delta > 0:
+            cvd_trend = "RISING"
+        elif cvd_delta < 0:
+            cvd_trend = "FALLING"
+        price_low_now = min(closes[-3:])
+        price_low_prev = min(closes[-6:-3])
+        price_high_now = max(closes[-3:])
+        price_high_prev = max(closes[-6:-3])
+        cvd_low_now = min(cvd_series[-3:])
+        cvd_low_prev = min(cvd_series[-6:-3])
+        cvd_high_now = max(cvd_series[-3:])
+        cvd_high_prev = max(cvd_series[-6:-3])
+        if price_low_now < price_low_prev and cvd_low_now > cvd_low_prev:
+            cvd_divergence = "BULLISH_ABSORPTION_DIV"
+        elif price_high_now > price_high_prev and cvd_high_now < cvd_high_prev:
+            cvd_divergence = "BEARISH_EXHAUSTION_DIV"
+
     return {
         "dom_bias": dom_bias,
         "imbalance_ratio": imbalance_ratio,
         "net_delta_pressure": pressure,
         "atr_buffer": atr_buffer,
         "bid_volume": round(total_bid_vol, 1),
-        "offer_volume": round(total_offer_vol, 1)
+        "offer_volume": round(total_offer_vol, 1),
+        "cvd_telemetry": {
+            "cvd": round(float(cvd_series[-1]) if cvd_series else 0.0, 1),
+            "cvd_trend": cvd_trend,
+            "cvd_divergence": cvd_divergence,
+        },
     }
 
 
@@ -177,9 +242,12 @@ def get_order_flow_telemetry() -> dict:
 
 
 if __name__ == "__main__":
+    logging.basicConfig(level=logging.INFO, format="%(levelname)s %(name)s: %(message)s")
     data = get_order_flow_telemetry()
-    print("--- L2/L3 ORDER FLOW TELEMETRY ---")
-    print(f"LSE Spot: ${data['lse_feed'].get('price', 0.0)} | Status: {data['lse_feed'].get('status')}")
-    print(f"DOM Bias: {data['dom_metrics']['dom_bias']}")
-    print(f"Imbalance Ratio: {data['dom_metrics']['imbalance_ratio']}")
-    print(f"Adaptive ATR Buffer: ${data['dom_metrics']['atr_buffer']}")
+    logger.info("--- L2/L3 ORDER FLOW TELEMETRY ---")
+    logger.info("LSE Spot: $%s | Status: %s", data['lse_feed'].get('price', 0.0), data['lse_feed'].get('status'))
+    logger.info("DOM Bias: %s", data['dom_metrics']['dom_bias'])
+    logger.info("Imbalance Ratio: %s", data['dom_metrics']['imbalance_ratio'])
+    logger.info("Adaptive ATR Buffer: $%s", data['dom_metrics']['atr_buffer'])
+    cvd = data['dom_metrics'].get('cvd_telemetry', {})
+    logger.info("CVD: %s | %s", cvd.get('cvd_trend'), cvd.get('cvd_divergence'))
