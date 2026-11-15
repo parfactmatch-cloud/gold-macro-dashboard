@@ -7,9 +7,12 @@ Based on Garvit Garg (Trade Nidar) Lecture 2 & Lecture 3:
 - Multi-Timeframe Structural Guardrails
 """
 
+import logging
 import math
 import pandas as pd
 import yfinance as yf
+
+logger = logging.getLogger(__name__)
 
 
 def inspect_profile_tpo_guards(ticker_symbol: str = "GC=F") -> dict:
@@ -119,9 +122,10 @@ def inspect_profile_tpo_guards(ticker_symbol: str = "GC=F") -> dict:
 
 
 if __name__ == "__main__":
+    logging.basicConfig(level=logging.INFO, format="%(levelname)s %(name)s: %(message)s")
     res = inspect_profile_tpo_guards("GC=F")
-    print("=== PROFILE & TPO GUARD TELEMETRY ===")
-    print(f"Profile Shape       : {res['profile_shape']} (POC Ratio: {res['poc_ratio']})")
-    print(f"Single Timeframing  : {res['single_timeframing']}")
-    print(f"Block Short Fade    : {res['block_short_fade']}")
-    print(f"Block Long Bounce   : {res['block_long_bounce']}")
+    logger.info("=== PROFILE & TPO GUARD TELEMETRY ===")
+    logger.info("Profile Shape       : %s (POC Ratio: %s)", res['profile_shape'], res['poc_ratio'])
+    logger.info("Single Timeframing  : %s", res['single_timeframing'])
+    logger.info("Block Short Fade    : %s", res['block_short_fade'])
+    logger.info("Block Long Bounce   : %s", res['block_long_bounce'])
