@@ -1,40 +1,58 @@
 """
 ===============================================================================
 PROJECT: QUANT ENGINE WEEKLY PERFORMANCE AUDIT & TELEGRAM DISPATCHER
-UPGRADES:
-  1. Multi-log aggregation with unified schema normalization (trade_log.csv + scalp_log.csv)
-  2. Strict 7-day rolling window based on current UTC epoch (now - 7 days)
-  3. Dynamic PnL, Win Rate, Profit Factor, Max Drawdown, and GEX/Macro audit telemetry
+
+Reads the REAL Jev paper-trading ledger (paper_trades.json) — the previous
+version read scalp_log.csv / trade_log.csv, files no engine in this repo
+ever writes, so it always reported an empty window while claiming measured
+gating efficacy. Those CSVs are still ingested opportunistically if they
+exist, but the ledger is the source of truth.
+
+Trade open time comes from the trade_id epoch (JEV-<unix seconds>); the
+ledger's opened_at field is only "HH:MM UTC" with no date, so it cannot
+be used for the 7-day window.
+
+Run manually or on a schedule (e.g. a weekly cron). It is NOT run by the
+15-minute sync workflow — a weekly report does not belong in a 15-minute loop.
 ===============================================================================
 """
 
+import json
+import logging
 import os
-import requests
+from datetime import datetime, timezone, timedelta
+
 import numpy as np
 import pandas as pd
-from datetime import datetime, timezone, timedelta
+import requests
+
+logger = logging.getLogger(__name__)
 
 # ================= CONFIGURATION =================
 TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN", "").strip()
 TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID", "").strip()
 
-SCALP_LOG_FILE = "scalp_log.csv"
-TRADE_LOG_FILE = "trade_log.csv"
+SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+TRADES_FILE = os.path.join(SCRIPT_DIR, "paper_trades.json")
+SCALP_LOG_FILE = os.path.join(SCRIPT_DIR, "scalp_log.csv")
+TRADE_LOG_FILE = os.path.join(SCRIPT_DIR, "trade_log.csv")
+
 
 def dispatch_telegram(text: str) -> bool:
     if not TELEGRAM_BOT_TOKEN or not TELEGRAM_CHAT_ID:
-        print("[TG WARN] Bot token or Chat ID not configured.")
+        logger.warning("[TG WARN] Bot token or Chat ID not configured.")
         return False
     try:
         res = requests.post(
             f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage",
             json={"chat_id": TELEGRAM_CHAT_ID, "text": text, "parse_mode": "Markdown"},
-            timeout=10
+            timeout=10,
         )
         return res.status_code == 200
     except Exception as e:
-        print(f"[TG ERROR] {e}")
+        logger.warning("[TG ERROR] %s", e)
         return False
+
 
 def parse_utc_timestamp(ts_val):
     """Safely converts heterogeneous timestamp strings to timezone-aware UTC datetime."""
@@ -46,11 +64,61 @@ def parse_utc_timestamp(ts_val):
     except Exception:
         return None
 
-def load_and_clean_logs(window_start: datetime, now_utc: datetime) -> pd.DataFrame:
-    """Ingests multi-source logs, aligns schema columns, and applies 7-day filter."""
-    records = []
 
-    # 1. Ingest Scalp Execution Logs (scalp_log.csv)
+def _trade_opened_at(trade: dict):
+    """Open time of a ledger trade, from its JEV-<epoch> trade_id."""
+    trade_id = str(trade.get("trade_id", ""))
+    try:
+        epoch = int(trade_id.split("-", 1)[1])
+        return datetime.fromtimestamp(epoch, tz=timezone.utc)
+    except Exception:
+        return None
+
+
+def load_ledger_trades(window_start: datetime, now_utc: datetime) -> list:
+    """Closed trades from paper_trades.json inside the window.
+
+    Each record: side, pnl, entry/sl/tp, exit_reason, opened_at.
+    Returns [] when the ledger is missing — honestly, not as a claim.
+    """
+    records = []
+    if not os.path.exists(TRADES_FILE):
+        logger.warning("Ledger %s not found; weekly report has no trades to audit.", TRADES_FILE)
+        return records
+    try:
+        with open(TRADES_FILE, "r") as f:
+            data = json.load(f)
+    except Exception as e:
+        logger.warning("Could not parse %s: %s", TRADES_FILE, e)
+        return records
+    for trade in data.get("closed_trades", []):
+        opened = _trade_opened_at(trade)
+        if opened is None or not (window_start <= opened <= now_utc):
+            continue
+        records.append(
+            {
+                "datetime": opened,
+                "source": "JEV_PAPER_LEDGER",
+                "side": str(trade.get("side", "OTHER")).upper(),
+                "status": str(trade.get("exit_reason", "CLOSED")).upper(),
+                "price": float(trade.get("entry_price", 0.0) or 0.0),
+                "sl": float(trade.get("sl", 0.0) or 0.0),
+                "tp": float(trade.get("tp", 0.0) or 0.0),
+                "pnl": float(trade.get("pnl", 0.0) or 0.0),
+            }
+        )
+    return records
+
+
+def load_and_clean_logs(window_start: datetime, now_utc: datetime) -> pd.DataFrame:
+    """Ingests optional CSV logs plus the real ledger, 7-day filtered.
+
+    The CSV files are legacy/optional — no engine writes them. The ledger
+    is always included when present.
+    """
+    records = load_ledger_trades(window_start, now_utc)
+
+    # 1. Ingest Scalp Execution Logs (scalp_log.csv) — optional
     if os.path.exists(SCALP_LOG_FILE):
         try:
             df_scalp = pd.read_csv(SCALP_LOG_FILE, on_bad_lines="skip")
@@ -68,12 +136,13 @@ def load_and_clean_logs(window_start: datetime, now_utc: datetime) -> pd.DataFra
                         "price": float(r.get("price", 0.0)) if pd.notna(r.get("price")) else 0.0,
                         "sl": float(r.get("sl", 0.0)) if pd.notna(r.get("sl")) else 0.0,
                         "tp": float(r.get("tp", 0.0)) if pd.notna(r.get("tp")) else 0.0,
+                        "pnl": 0.0,
                         "tag": str(r.get("tag", "DYNAMIC_SCALP"))
                     })
         except Exception as e:
-            print(f"[WARN] Could not parse {SCALP_LOG_FILE}: {e}")
+            logger.warning("[WARN] Could not parse %s: %s", SCALP_LOG_FILE, e)
 
-    # 2. Ingest Systematic Trade Logs (trade_log.csv)
+    # 2. Ingest Systematic Trade Logs (trade_log.csv) — optional
     if os.path.exists(TRADE_LOG_FILE):
         try:
             df_trade = pd.read_csv(TRADE_LOG_FILE, on_bad_lines="skip")
@@ -91,12 +160,14 @@ def load_and_clean_logs(window_start: datetime, now_utc: datetime) -> pd.DataFra
                         "price": float(r.get("Price", 0.0)) if pd.notna(r.get("Price")) else 0.0,
                         "sl": float(r.get("SL", 0.0)) if pd.notna(r.get("SL")) else 0.0,
                         "tp": float(r.get("TP", 0.0)) if pd.notna(r.get("TP")) else 0.0,
+                        "pnl": 0.0,
                         "tag": str(r.get("Conviction", "CONFLUENCE_MODEL"))
                     })
         except Exception as e:
-            print(f"[WARN] Could not parse {TRADE_LOG_FILE}: {e}")
+            logger.warning("[WARN] Could not parse %s: %s", TRADE_LOG_FILE, e)
 
     return pd.DataFrame(records)
+
 
 def generate_weekly_report():
     now_utc = datetime.now(timezone.utc)
@@ -106,7 +177,8 @@ def generate_weekly_report():
 
     df = load_and_clean_logs(week_ago, now_utc)
 
-    # Empty State: Zero Qualified Executions
+    # Empty State: honestly report that there is nothing to measure.
+    # The old version claimed gating efficacy here with zero trades.
     if df.empty:
         report = (
             f"📊 *WEEKLY PERFORMANCE AUDIT REPORT*\n"
@@ -116,14 +188,12 @@ def generate_weekly_report():
             f"• Total Executed Trades: `0`\n"
             f"  🟢 BUY Trades: `0`\n"
             f"  🔴 SELL Trades: `0`\n\n"
-            f"🛡️ *Institutional Gating & Efficacy*:\n"
-            f"• Dealer Call/Put Gamma Walls successfully prevented boundary exhaustion.\n"
-            f"• Structural R:R Gatekeeper (< 1:1.30) suppressed cramped risk profiles.\n"
-            f"• Multi-Timeframe 30M & US10Y Macro hard-gating active.\n\n"
+            f"ℹ️ *Note*: No closed trades in the window, so no win rate, "
+            f"profit factor or drawdown can be measured.\n\n"
             f"_Engine: Volatility-Adaptive XAU/USD Quant Suite_"
         )
         dispatch_telegram(report)
-        print(report)
+        logger.info(report)
         return
 
     # Filter directional trades
@@ -139,16 +209,14 @@ def generate_weekly_report():
             f"⏱ *Rolling Window*: `{window_str}`\n\n"
             f"📈 *Execution Summary (Last 7 Days)*:\n"
             f"• Total Executed Trades: `0` (Only Non-Directional/Suppressed Entries)\n\n"
-            f"🛡️ *Filter Efficacy*:\n"
-            f"• All candidate triggers filtered by institutional equilibrium barriers.\n"
-            f"• Capital drawdown during window: `0.00%`\n\n"
+            f"ℹ️ *Note*: No directional trades closed in the window.\n\n"
             f"_Engine: Volatility-Adaptive XAU/USD Quant Suite_"
         )
         dispatch_telegram(report)
-        print(report)
+        logger.info(report)
         return
 
-    # Dynamic Metric Calculations
+    # Dynamic Metric Calculations — ledger rows carry real booked PnL.
     wins = 0
     losses = 0
     gross_profit = 0.0
@@ -161,6 +229,7 @@ def generate_weekly_report():
         sl = row["sl"]
         tp = row["tp"]
         status = row["status"]
+        pnl = float(row.get("pnl", 0.0)) if "pnl" in row else 0.0
 
         if entry > 0 and sl > 0 and tp > 0:
             risk = abs(entry - sl)
@@ -168,17 +237,28 @@ def generate_weekly_report():
             if risk > 0:
                 rr_ratios.append(reward / risk)
 
-            # Performance reconciliation based on lifecycle status
-            if status in ["CLOSED_WIN", "TP_HIT", "WIN"]:
+        # Ledger rows: use the booked PnL, not a reconstructed one.
+        if row.get("source") == "JEV_PAPER_LEDGER":
+            pnl_sequence.append(pnl)
+            if pnl > 0:
                 wins += 1
-                gross_profit += reward
-                pnl_sequence.append(reward)
-            elif status in ["CLOSED_LOSS", "SL_HIT", "LOSS"]:
+                gross_profit += pnl
+            elif pnl < 0:
                 losses += 1
-                gross_loss += risk
-                pnl_sequence.append(-risk)
-            else:
-                pnl_sequence.append(0.0)
+                gross_loss += abs(pnl)
+            continue
+
+        # Legacy CSV rows: lifecycle-status reconstruction as before.
+        if status in ["CLOSED_WIN", "TP_HIT", "WIN"]:
+            wins += 1
+            gross_profit += abs(tp - entry) if entry > 0 and tp > 0 else 0.0
+            pnl_sequence.append(abs(tp - entry) if entry > 0 and tp > 0 else 0.0)
+        elif status in ["CLOSED_LOSS", "SL_HIT", "LOSS"]:
+            losses += 1
+            gross_loss += abs(entry - sl) if entry > 0 and sl > 0 else 0.0
+            pnl_sequence.append(-abs(entry - sl) if entry > 0 and sl > 0 else 0.0)
+        else:
+            pnl_sequence.append(0.0)
 
     closed_cycles = wins + losses
     win_rate = (wins / closed_cycles * 100.0) if closed_cycles > 0 else 0.0
@@ -205,7 +285,7 @@ def generate_weekly_report():
         f"  🟢 Long (BUY): `{buy_trades}`\n"
         f"  🔴 Short (SELL): `{sell_trades}`\n"
         f"• Resolved Cycles: `{closed_cycles}`\n\n"
-        f"🎯 *Performance Matrix*:\n"
+        f"🎯 *Performance Matrix* (from the paper-trades ledger):\n"
         f"• Win Rate: `{win_rate:.1f}%` ({wins}W / {losses}L)\n"
         f"• Profit Factor: `{profit_factor:.2f}`\n"
         f"• Average Structural R:R: `1:{avg_rr:.2f}`\n"
@@ -219,8 +299,9 @@ def generate_weekly_report():
     )
 
     dispatch_telegram(report)
-    print(report)
+    logger.info(report)
+
 
 if __name__ == "__main__":
+    logging.basicConfig(level=logging.INFO, format="%(levelname)s %(name)s: %(message)s")
     generate_weekly_report()
-  

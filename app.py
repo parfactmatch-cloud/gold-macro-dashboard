@@ -9,16 +9,28 @@ import numpy as np
 import requests
 from datetime import datetime, timezone
 
+import logging
+
+logger = logging.getLogger(__name__)
+
 # Page Setup
 st.set_page_config(page_title="Gold Institutional Macro & GEX Engine", page_icon="🪙", layout="wide")
 
-FRED_API_KEY = "73f33ecb948906c7197f3e0a042e5e3f"
-fred = Fred(api_key=FRED_API_KEY)
+# FRED key comes from the environment only. It was previously hardcoded in
+# this file in a public repo — that key must be rotated in FRED.
+# See .env.example. If unset, the dashboard shows an error instead of
+# silently using a stale key.
+FRED_API_KEY = os.getenv("FRED_API_KEY", "").strip()
+fred = Fred(api_key=FRED_API_KEY) if FRED_API_KEY else None
 GEX_CACHE_FILE = "gex_levels.json"
 
 # ----------------- DATA FETCHING -----------------
 @st.cache_data(ttl=1800)
 def fetch_macro_and_market():
+    if fred is None:
+        raise RuntimeError(
+            "FRED_API_KEY is not set. Set it in the environment (see .env.example)."
+        )
     # 1. FRED Macro Data
     real_yield = fred.get_series('DFII10').dropna()
     yield_2y = fred.get_series('DGS2').dropna()
@@ -73,7 +85,9 @@ def fetch_cot_data():
         long_pos = float(df_cot['noncomm_positions_long_all'].iloc[0])
         short_pos = float(df_cot['noncomm_positions_short_all'].iloc[0])
         net_pos = long_pos - short_pos
-        
+
+        if len(df_cot) < 2:
+            return net_pos, 0.0, True
         prev_net = float(df_cot['noncomm_positions_long_all'].iloc[1]) - float(df_cot['noncomm_positions_short_all'].iloc[1])
         cot_delta = net_pos - prev_net
         
@@ -98,6 +112,14 @@ def render_gex_dashboard_section(current_spot: float):
     if not gex_data or gex_data.get("status") == "FAILED":
         st.warning("⚠️ Institutional Options GEX/DEX cache is syncing or unavailable.")
         return
+
+    # Synthetic levels are labelled as such by free_gex_engine.py — never
+    # present them as live institutional data.
+    if gex_data.get("synthetic") or gex_data.get("status") == "DEGRADED_SYNTHETIC":
+        st.warning(
+            "⚠️ GEX levels are SYNTHETIC estimates (live options feed unavailable). "
+            "Do not trade off these levels."
+        )
 
     call_wall = float(gex_data.get("call_wall_xau", 0.0))
     put_wall = float(gex_data.get("put_wall_xau", 0.0))
@@ -192,31 +214,38 @@ try:
     real_yield, yield_curve, net_liq, combined, rolling_corr = fetch_macro_and_market()
     cot_net, cot_delta, cot_success = fetch_cot_data()
 
-    # Metric Deltas
+    # Metric Deltas — guarded against short series so a thin feed cannot
+    # crash the whole dashboard into its except branch.
+    def _delta(series, n: int) -> float:
+        return float(series.iloc[-1] - series.iloc[-1 - n]) if len(series) > n else 0.0
+
     ry_curr = real_yield.iloc[-1]
-    ry_delta = ry_curr - real_yield.iloc[-5]
+    ry_delta = _delta(real_yield, 5)
 
     liq_curr = net_liq.iloc[-1]
-    liq_delta = liq_curr - net_liq.iloc[-2]
+    liq_delta = _delta(net_liq, 2)
 
     yc_curr = yield_curve.iloc[-1]
-    yc_delta = yc_curr - yield_curve.iloc[-5]
+    yc_delta = _delta(yield_curve, 5)
 
     dxy_curr = combined['DXY'].iloc[-1] if not combined.empty and 'DXY' in combined else 100.0
-    dxy_delta = dxy_curr - combined['DXY'].iloc[-5] if not combined.empty and 'DXY' in combined and len(combined) >= 5 else 0.0
+    dxy_delta = _delta(combined['DXY'], 5) if not combined.empty and 'DXY' in combined else 0.0
     corr_curr = rolling_corr.iloc[-1] if not rolling_corr.empty else -0.50
 
     cu_au_ratio = (combined['HG'].iloc[-1] / combined['GC'].iloc[-1]) if not combined.empty and 'HG' in combined and 'GC' in combined else 0.0
     au_ag_ratio = (combined['GC'].iloc[-1] / combined['SI'].iloc[-1]) if not combined.empty and 'SI' in combined and 'GC' in combined else 0.0
     
-    # Priority Spot Resolution for UI
+    # Priority Spot Resolution for UI — never invent a spot price. If no
+    # live source and no cached GEX spot are available, show an error
+    # instead of a made-up number (the old code defaulted to $4,408).
     cached_gex = load_gex_telemetry()
     if cached_gex and float(cached_gex.get("spot_xau", 0.0)) > 1500.0:
         live_gold_spot = float(cached_gex.get("spot_xau"))
     elif not combined.empty and 'GC' in combined and float(combined['GC'].iloc[-1]) > 1500.0:
         live_gold_spot = float(combined['GC'].iloc[-1])
     else:
-        live_gold_spot = 4408.0
+        st.error("Live gold spot is unavailable from every source — cannot render the dashboard.")
+        raise SystemExit("No live gold spot available.")
 
     # ----------------- SCORING ENGINE -----------------
     score = 0

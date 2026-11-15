@@ -1,9 +1,19 @@
-streamlit
-yfinance
-fredapi
-plotly
-pandas
-numpy
-requests
-websockets
-lse-data[frames]
+# Pinned runtime dependencies. Install with: pip install -r requirements.txt
+# Notes:
+# - scipy is imported by free_gex_engine.py (was missing).
+# - torch is intentionally NOT here: Kronos is a 10-bar momentum sigmoid
+#   and no longer imports torch (see kronos_gatekeeper.py).
+# - lse-data was removed: nothing in this repo imports it.
+# - pyarrow is pinned below the latest release: the 26.0.1 wheel
+#   repeatedly fails to download in full (network truncated at ~49/55 MB).
+#   Streamlit only needs pyarrow>=7.
+pyarrow==18.1.0
+streamlit==1.41.1
+yfinance==0.2.54
+fredapi==0.5.2
+plotly==5.24.1
+pandas==2.2.3
+numpy==1.26.4
+requests==2.32.3
+scipy==1.14.1
+websockets==14.1

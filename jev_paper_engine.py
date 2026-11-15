@@ -1,7 +1,7 @@
 """
 jev_paper_engine.py
 Order Flow Confluence Execution Engine (Jev Model)
-- Integrated with Kronos K-Line Foundation Model Neural Gatekeeper
+- Integrated with Kronos momentum regime check (10-bar sigmoid, not a neural model)
 - Integrated with High-Impact Macro Economic News Blackout Gatekeeper
 - Integrated with LBMA Benchmark Auction Timing Engine (IST Native)
 - Integrated with L2/L3 DOM Imbalance & CVD Divergence Microstructure Engine
@@ -13,11 +13,27 @@ Order Flow Confluence Execution Engine (Jev Model)
 
 import os
 import json
+import logging
 import math
 import requests
 import pandas as pd
 import yfinance as yf
 from datetime import datetime, timezone
+
+from config import (
+    BALANCE_FLOOR_USD,
+    BASE_RISK_PCT,
+    HIGH_CONVICTION_RISK_PCT,
+    MAX_DAILY_LOSS_USD,
+    MAX_OPEN_POSITIONS,
+    MAX_TRADES_PER_DAY,
+    MIN_RR,
+    NEUTRAL_RISK_PCT,
+    STARTING_BALANCE_USD,
+    setup_logging,
+)
+
+logger = setup_logging("jev_paper_engine")
 
 # Import micro-engines
 try:
@@ -88,15 +104,55 @@ def load_state() -> dict:
     if os.path.exists(TRADES_FILE):
         try:
             with open(TRADES_FILE, "r") as f:
-                return json.load(f)
+                state = json.load(f)
+            # Backfill fields added by the risk/ledger fixes so old
+            # ledgers still load.
+            state.setdefault("daily", _fresh_daily_stats())
+            return state
         except Exception:
             pass
     return {
-        "balance": 10000.0,
+        "balance": STARTING_BALANCE_USD,
         "active_trade": None,
         "closed_trades": [],
-        "last_update_id": 0
+        "last_update_id": 0,
+        "daily": _fresh_daily_stats(),
     }
+
+
+def _fresh_daily_stats() -> dict:
+    return {
+        "date": datetime.now(timezone.utc).strftime("%Y-%m-%d"),
+        "trades_opened": 0,
+        "daily_pnl": 0.0,
+    }
+
+
+def _daily_stats(state: dict) -> dict:
+    """Daily stats, reset when the UTC date rolls over."""
+    today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+    daily = state.get("daily") or _fresh_daily_stats()
+    if daily.get("date") != today:
+        daily = _fresh_daily_stats()
+        state["daily"] = daily
+    return daily
+
+
+def risk_limits_blocked(state: dict) -> str:
+    """Return a reason string if a risk limit blocks new trades, else ''.
+
+    Limits (config.py, overridable by env): max daily loss, max trades
+    per day, and a balance floor. One open position max is enforced by
+    the active-trade branch, not here.
+    """
+    daily = _daily_stats(state)
+    if daily.get("daily_pnl", 0.0) <= -MAX_DAILY_LOSS_USD:
+        return f"daily loss limit reached ({daily['daily_pnl']:.2f} <= -${MAX_DAILY_LOSS_USD:.0f})"
+    if daily.get("trades_opened", 0) >= MAX_TRADES_PER_DAY:
+        return f"max trades per day reached ({MAX_TRADES_PER_DAY})"
+    if state.get("balance", STARTING_BALANCE_USD) <= BALANCE_FLOOR_USD:
+        return f"balance floor reached (${state['balance']:.2f} <= ${BALANCE_FLOOR_USD:.0f})"
+    return ""
 
 
 def save_state(state: dict):
@@ -104,75 +160,41 @@ def save_state(state: dict):
         json.dump(state, f, indent=2)
 
 
-def handle_telegram_commands(state: dict, spot: float):
-    if not TELEGRAM_BOT_TOKEN:
-        return
+def close_active_trade(state: dict, spot: float, exit_reason: str = "MANUAL_BOT_CLOSE") -> dict | None:
+    """Close the open paper trade at ``spot`` and reconcile its PnL.
 
-    last_id = state.get("last_update_id", 0)
-    url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/getUpdates"
-    try:
-        res = requests.get(url, params={"offset": last_id + 1, "timeout": 3}, timeout=6)
-        if res.status_code != 200:
-            return
-        updates = res.json().get("result", [])
+    The closed trade's ``pnl`` is the sum of any scale-out PnL already
+    booked (``partial_pnl``) plus the remaining units' PnL at exit, so
+    closed-trade PnL now sums to the balance change. Returns the closed
+    trade, or None if there was no active trade.
+    """
+    active = state.get("active_trade")
+    if not active:
+        return None
+    remaining_pnl = (spot - active["entry_price"]) * active["units"] if active["side"] == "BUY" else (active["entry_price"] - spot) * active["units"]
+    partial_pnl = float(active.get("partial_pnl", 0.0))
+    pnl = remaining_pnl + partial_pnl
+    # The scale-out portion was already added to the balance when booked.
+    state["balance"] += remaining_pnl
+    # The scale-out portion was already added to daily PnL when booked.
+    _daily_stats(state)["daily_pnl"] = round(
+        _daily_stats(state).get("daily_pnl", 0.0) + remaining_pnl, 2
+    )
+    active["exit_price"] = spot
+    active["pnl"] = round(pnl, 2)
+    active["exit_reason"] = exit_reason
+    state["closed_trades"].append(active)
+    state["active_trade"] = None
+    save_state(state)
+    return active
 
-        for u in updates:
-            state["last_update_id"] = u["update_id"]
-            msg = u.get("message", {})
-            text = msg.get("text", "").strip().lower()
 
-            active = state.get("active_trade")
-            if "/status" in text:
-                if active:
-                    side = active["side"]
-                    entry = active["entry_price"]
-                    fl_pnl = (spot - entry) * active["units"] if side == "BUY" else (entry - spot) * active["units"]
-                    reply = (
-                        f"📊 <b>JEV ACTIVE ORDER FLOW POSITION</b>\n"
-                        f"• Side: <code>{side} XAU/USD</code>\n"
-                        f"• Entry: <code>${entry:.2f}</code> | Spot: <code>${spot:.2f}</code>\n"
-                        f"• PnL: <code>{'+' if fl_pnl >= 0 else ''}${fl_pnl:.2f}</code>\n"
-                        f"• Target TP: <code>${active['tp']:.2f}</code> | SL: <code>${active['sl']:.2f}</code>\n"
-                        f"• Dynamic Buffer: <code>${active.get('atr_buffer', 8.50):.2f}</code>\n"
-                        f"• DOM / CVD: <code>{active.get('order_flow_flow', 'N/A')}</code>\n"
-                        f"• Neural AI Score: <code>{active.get('kronos_score', 'N/A')}</code>\n"
-                        f"• Setup: <code>{active.get('reason')}</code>"
-                    )
-                else:
-                    reply = (
-                        f"💤 <b>NO ACTIVE TRADES</b>\n"
-                        f"• Portfolio: <code>${state.get('balance', 10000.0):.2f}</code>\n"
-                        f"• Status: <code>SCANNING_GEX_DOM_LBMA_CONFLUENCE</code>"
-                    )
-                send_tg_msg(reply)
-
-            elif "/close" in text and active:
-                pnl = (spot - active["entry_price"]) * active["units"] if active["side"] == "BUY" else (active["entry_price"] - spot) * active["units"]
-                state["balance"] += pnl
-                active["exit_price"] = spot
-                active["pnl"] = round(pnl, 2)
-                active["exit_reason"] = "MANUAL_BOT_CLOSE"
-                state["closed_trades"].append(active)
-                state["active_trade"] = None
-                save_state(state)
-                send_tg_msg(f"🛑 Closed at ${spot:.2f} | PnL: ${pnl:.2f}")
-
-            elif "/summary" in text:
-                closed = state.get("closed_trades", [])
-                wins = len([t for t in closed if t.get("pnl", 0) > 0])
-                total = len(closed)
-                wr = (wins / total * 100) if total > 0 else 0.0
-                total_pnl = sum([t.get("pnl", 0.0) for t in closed])
-                send_tg_msg(
-                    f"📈 <b>JEV QUANTITATIVE PERFORMANCE</b>\n"
-                    f"• Balance: <code>${state['balance']:.2f}</code>\n"
-                    f"• Cumulative PnL: <code>{'+' if total_pnl >= 0 else ''}${total_pnl:.2f}</code>\n"
-                    f"• Total Trades: <code>{total}</code> (WR: <code>{wr:.1f}%</code>)"
-                )
-
-        save_state(state)
-    except Exception:
-        pass
+# NOTE: Telegram command handling used to live here and polled getUpdates
+# with its own offset, competing with telegram_engine.py and
+# live_telegram_listener.py (a command could be answered twice or missed).
+# All command handling is now consolidated in telegram_engine.py, which
+# uses the shared offset in telegram_commands.py. This module no longer
+# polls Telegram at all.
 
 
 def run_jev_cycle():
@@ -215,7 +237,7 @@ def run_jev_cycle():
             cvd_divergence = cvd_data.get("cvd_divergence", "NONE")
             cvd_trend = cvd_data.get("cvd_trend", "FLAT")
         except Exception as e:
-            print(f"[DOM TELEMETRY EXCEPTION] {e}")
+            logger.warning("[DOM TELEMETRY EXCEPTION] %s", e)
 
     # 2. Ingest LBMA Benchmark Auction Windows (IST Native)
     lbma_policy = "NORMAL"
@@ -230,7 +252,7 @@ def run_jev_cycle():
             lbma_risk_mult = lbma_status.get("risk_weight", 1.0)
             lbma_rr_mult = lbma_status.get("rr_multiplier", 1.0)
         except Exception as e:
-            print(f"[LBMA RADAR EXCEPTION] {e}")
+            logger.warning("[LBMA RADAR EXCEPTION] %s", e)
 
     # 3. Ingest Kronos Signals
     kronos_bull_prob = 0.50
@@ -257,10 +279,12 @@ def run_jev_cycle():
             pass
 
     state = load_state()
+    if state.get("active_trade") and MAX_OPEN_POSITIONS <= 1:
+        pass  # active-trade branch below manages the open position
     now_utc = datetime.now(timezone.utc).strftime("%H:%M UTC")
 
-    # Handle incoming Telegram commands
-    handle_telegram_commands(state, spot)
+    # Telegram commands are handled by telegram_engine.py (shared offset
+    # in telegram_commands.py) — this engine no longer polls Telegram.
 
     active = state.get("active_trade")
 
@@ -285,7 +309,15 @@ def run_jev_cycle():
         gain = (spot - entry) if side == "BUY" else (entry - spot)
         if not active.get("partial_taken") and gain >= (risk * 1.5):
             booked = round(active["units"] * 0.5, 2)
-            state["balance"] += booked * gain
+            partial_pnl = round(booked * gain, 2)
+            state["balance"] += partial_pnl
+            # Record the scale-out on the trade itself: without this the
+            # closed trade's PnL never included it, so closed PnL did not
+            # sum to the balance change.
+            active["partial_pnl"] = round(float(active.get("partial_pnl", 0.0)) + partial_pnl, 2)
+            _daily_stats(state)["daily_pnl"] = round(
+                _daily_stats(state).get("daily_pnl", 0.0) + partial_pnl, 2
+            )
             active["units"] = round(active["units"] - booked, 2)
             active["partial_taken"] = True
             active["sl"] = entry
@@ -308,9 +340,17 @@ def run_jev_cycle():
                 closed = True; pnl = (entry - active["sl"]) * active["units"]; reason = "STOP_LOSS_HIT"
 
         if closed:
-            state["balance"] += pnl
+            # PnL includes any scale-out already booked on this trade.
+            # The scale-out portion was already added to the balance when
+            # it was booked, so only the remaining-units PnL is added now.
+            partial_pnl = float(active.get("partial_pnl", 0.0))
+            pnl = round(pnl + partial_pnl, 2)
+            state["balance"] += pnl - partial_pnl
+            _daily_stats(state)["daily_pnl"] = round(
+                _daily_stats(state).get("daily_pnl", 0.0) + (pnl - partial_pnl), 2
+            )
             active["exit_price"] = spot
-            active["pnl"] = round(pnl, 2)
+            active["pnl"] = pnl
             active["exit_reason"] = reason
             state["closed_trades"].append(active)
             state["active_trade"] = None
@@ -321,21 +361,33 @@ def run_jev_cycle():
 
     # Master Execution Gatekeepers
     if news_blackout:
-        print(f"[JEV ENGINE] Execution blocked: News Blackout Active ({event_name}).")
+        logger.info("[JEV ENGINE] Execution blocked: News Blackout Active (%s).", event_name)
         return
 
     if lbma_policy == "TOTAL_EXECUTION_BLACKOUT":
-        print(f"[JEV ENGINE] Execution blocked: Live LBMA Benchmark Auction in progress ({lbma_phase}).")
+        logger.info("[JEV ENGINE] Execution blocked: Live LBMA Benchmark Auction in progress (%s).", lbma_phase)
         return
 
     if os.path.exists(CONTROL_FILE):
         try:
             with open(CONTROL_FILE, "r") as cf:
                 if json.load(cf).get("is_paused", False):
-                    print("[JEV ENGINE] Execution blocked: Engine paused via Telegram /pause.")
+                    logger.info("[JEV ENGINE] Execution blocked: Engine paused via Telegram /pause.")
                     return
         except Exception:
             pass
+
+    # Never open a new trade off synthetic GEX levels. Existing positions
+    # are still managed above; only fresh entries are blocked.
+    if telemetry.get("synthetic") or telemetry.get("status") == "DEGRADED_SYNTHETIC":
+        logger.info("[JEV ENGINE] Execution blocked: GEX levels are synthetic estimates, not live data.")
+        return
+
+    # Risk limits (config.py): max daily loss, max trades/day, balance floor.
+    blocked_reason = risk_limits_blocked(state)
+    if blocked_reason:
+        logger.info("[JEV ENGINE] Execution blocked by risk limit: %s", blocked_reason)
+        return
 
     # Confluence Setup Identification
     side = None
@@ -355,7 +407,7 @@ def run_jev_cycle():
     elif (spot <= (put_wall + 8.0) or spot <= (val + 4.0)) and not blast:
         # Invalidation Guard: agar spot gamma_flip ke niche slice ho chuka hai to bounce buy block
         if spot < gamma_flip:
-            print("[JEV GATE] Long setup skipped: Spot is below Gamma Neutral Flip (Breakdown danger).")
+            logger.info("[JEV GATE] Long setup skipped: Spot is below Gamma Neutral Flip (Breakdown danger).")
         else:
             target_tp = round(poc, 2)
             if target_tp > spot + 4.0:
@@ -389,34 +441,34 @@ def run_jev_cycle():
     if inspect_profile_tpo_guards:
         tpo_guards = inspect_profile_tpo_guards("GC=F")
         if side == "SELL" and ("ABSORPTION" in reason or "EXHAUSTION" in reason) and tpo_guards.get("block_short_fade"):
-            print(f"[TPO GATE] SELL Fade Blocked: {tpo_guards['profile_shape']} | {tpo_guards['single_timeframing']}")
+            logger.info("[TPO GATE] SELL Fade Blocked: %s | %s", tpo_guards["profile_shape"], tpo_guards["single_timeframing"])
             return
         if side == "BUY" and "ABSORPTION" in reason and tpo_guards.get("block_long_bounce"):
-            print(f"[TPO GATE] BUY Bounce Blocked: {tpo_guards['profile_shape']} | {tpo_guards['single_timeframing']}")
+            logger.info("[TPO GATE] BUY Bounce Blocked: %s | %s", tpo_guards["profile_shape"], tpo_guards["single_timeframing"])
             return
 
     # LBMA Pre-Fix Inventory Shading Guard
     if lbma_policy == "BLOCK_MEAN_REVERSION_MOMENTUM_ONLY" and "ABSORPTION" in reason:
-        print(f"[JEV LBMA GATE] Fade rejected: Pre-Fix directional inventory ramp in progress ({lbma_phase}).")
+        logger.info("[JEV LBMA GATE] Fade rejected: Pre-Fix directional inventory ramp in progress (%s).", lbma_phase)
         return
 
     # L2/L3 DOM Imbalance & CVD Divergence Gatekeepers
     if side == "BUY":
         if dom_bias == "INSTITUTIONAL_OFFER_ABSORPTION":
-            print(f"[JEV DOM GATE] BUY rejected: Strong Offer Absorption (IR: {imbalance_ratio})")
+            logger.info("[JEV DOM GATE] BUY rejected: Strong Offer Absorption (IR: %s)", imbalance_ratio)
             return
         if cvd_divergence == "BEARISH_EXHAUSTION_DIV":
-            print("[JEV CVD GATE] BUY rejected: Bearish CVD Exhaustion Divergence active.")
+            logger.info("[JEV CVD GATE] BUY rejected: Bearish CVD Exhaustion Divergence active.")
             return
         if cvd_divergence == "BULLISH_ABSORPTION_DIV":
             reason += "_CVD_ABSORBED"
 
     if side == "SELL":
         if dom_bias == "INSTITUTIONAL_BID_ABSORPTION" and "BREAKDOWN" not in reason:
-            print(f"[JEV DOM GATE] SELL rejected: Strong Bid Absorption (IR: {imbalance_ratio})")
+            logger.info("[JEV DOM GATE] SELL rejected: Strong Bid Absorption (IR: %s)", imbalance_ratio)
             return
         if cvd_divergence == "BULLISH_ABSORPTION_DIV":
-            print("[JEV CVD GATE] SELL rejected: Bullish CVD Absorption Divergence active.")
+            logger.info("[JEV CVD GATE] SELL rejected: Bullish CVD Absorption Divergence active.")
             return
         if cvd_divergence == "BEARISH_EXHAUSTION_DIV":
             reason += "_CVD_EXHAUSTED"
@@ -427,26 +479,26 @@ def run_jev_cycle():
     if side == "SELL" and sl <= spot:
         return
 
-    # Kronos Neural Confidence Filter
+    # Kronos Momentum Confidence Filter
     # Breakdown setups are aggressive momentum trades; require bear probability >= 0.40
     if reason.startswith("SHORT_GAMMA_WALL_BREAKDOWN"):
         if kronos_bull_prob > 0.65:
-            print(f"[JEV GATEKEEPER] Breakdown SELL rejected: Kronos high bullish score ({kronos_bull_prob:.2f})")
+            logger.info("[JEV GATEKEEPER] Breakdown SELL rejected: Kronos high bullish score (%.2f)", kronos_bull_prob)
             return
     else:
         if side == "BUY" and kronos_bull_prob < 0.40:
-            print(f"[JEV GATEKEEPER] BUY Setup rejected: Kronos Bearish Bias ({kronos_bull_prob:.2f})")
+            logger.info("[JEV GATEKEEPER] BUY Setup rejected: Kronos Bearish Bias (%.2f)", kronos_bull_prob)
             return
         if side == "SELL" and kronos_bull_prob > 0.60:
-            print(f"[JEV GATEKEEPER] SELL Setup rejected: Kronos Bullish Bias ({kronos_bull_prob:.2f})")
+            logger.info("[JEV GATEKEEPER] SELL Setup rejected: Kronos Bullish Bias (%.2f)", kronos_bull_prob)
             return
 
-    # Probabilistic Fractional Sizing & LBMA Scaling
-    base_risk = 0.010
+    # Probabilistic Fractional Sizing & LBMA Scaling (rates from config.py)
+    base_risk = BASE_RISK_PCT
     if (side == "BUY" and kronos_bull_prob >= 0.70) or (side == "SELL" and kronos_bull_prob <= 0.30):
-        risk_pct = 0.015
+        risk_pct = HIGH_CONVICTION_RISK_PCT
     elif 0.45 <= kronos_bull_prob <= 0.55:
-        risk_pct = 0.0075
+        risk_pct = NEUTRAL_RISK_PCT
     else:
         risk_pct = base_risk
 
@@ -464,7 +516,7 @@ def run_jev_cycle():
         reason += f"_{lbma_phase}"
 
     rr = round(abs(tp - spot) / risk_dist, 2)
-    if rr < 1.30:
+    if rr < MIN_RR:
         return
 
     units = round(risk_cash / risk_dist, 2)
@@ -487,6 +539,8 @@ def run_jev_cycle():
         "opened_at": now_utc
     }
 
+    _daily_stats(state)["trades_opened"] = _daily_stats(state).get("trades_opened", 0) + 1
+    new_trade["partial_pnl"] = 0.0
     state["active_trade"] = new_trade
     save_state(state)
 
@@ -501,7 +555,7 @@ def run_jev_cycle():
         f"🌊 <b>DOM Flow</b>: <code>{dom_bias} (IR: {imbalance_ratio})</code>\n"
         f"📈 <b>CVD State</b>: <code>{cvd_trend} | {cvd_divergence}</code>\n"
         f"🏛 <b>LBMA Phase</b>: <code>{lbma_phase}</code>\n"
-        f"🧠 <b>Kronos Neural Gate</b>: <code>{kronos_regime} ({kronos_bull_prob:.2f})</code>\n"
+        f"🧠 <b>Kronos Momentum Gate</b>: <code>{kronos_regime} ({kronos_bull_prob:.2f})</code>\n"
         f"📊 <b>Profile Context</b>: VAL ${val:.2f} | POC ${poc:.2f} | VAH ${vah:.2f}\n"
         f"⏰ <b>Executed At</b>: <code>{now_utc}</code>"
     )
