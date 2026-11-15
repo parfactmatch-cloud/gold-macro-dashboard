@@ -1,13 +1,14 @@
 {
-  "timestamp_utc": "2026-11-15 19:42:24 UTC",
+  "timestamp_utc": "2026-11-15 21:13:58 UTC",
   "status": "HEALTHY",
+  "synthetic": false,
   "data_source": "TWELVE_DATA",
-  "spot_xau": 3880.48,
+  "spot_xau": 3880.44,
   "gld_close": 355.45,
-  "conv_ratio": 10.9171,
-  "call_wall_xau": 3930.15,
-  "put_wall_xau": 3820.98,
-  "gamma_flip_xau": 3870.11,
+  "conv_ratio": 10.917,
+  "call_wall_xau": 3930.11,
+  "put_wall_xau": 3820.94,
+  "gamma_flip_xau": 3870.07,
   "net_dex_m": -0.6,
   "net_gamma_regime": "LONG_GAMMA_MEAN_REVERT",
   "gamma_blast_active": false,
@@ -22,8 +23,8 @@
     "absorption_bias": "VALUE_ACCEPTED"
   },
   "lse_telemetry": {
-    "lse_status": "ONLINE",
-    "institutional_core": "LSE_QUANT_SYNCHRONIZED",
+    "lse_status": "UNAVAILABLE",
+    "institutional_core": "LSE_NOT_CONFIGURED",
     "order_flow_bias": "DISTRIBUTION"
   }
 }
