@@ -167,7 +167,7 @@
             <button class="action-btn" onclick="triggerManualSync()">🔄 Sync LSE Stream</button>
             <button class="action-btn" onclick="toggleTheme()">☀️ / 🌙</button>
             <div class="live-badge">
-                <div class="live-dot"></div> LSE TELEMETRY ACTIVE
+                <div class="live-dot"></div> LSE TELEMETRY (UNVERIFIED FEED)
             </div>
         </div>
     </header>
@@ -209,7 +209,7 @@
             </div>
             <div class="metric-card" style="border-left-color: var(--blue);">
                 <div class="metric-title">US10Y Bond Yield</div>
-                <div class="metric-value" id="t-yield">4.28%</div>
+                <div class="metric-value" id="t-yield">—</div>
                 <div class="metric-sub" style="color: var(--muted);">Sovereign Drag Metric</div>
             </div>
             <div class="metric-card" style="border-left-color: var(--purple);">
@@ -236,7 +236,7 @@
             <div class="card-box">
                 <div class="card-header">
                     <span>⚡ LSE Institutional Filter Gates & Order Flow Telemetry</span>
-                    <span style="color: var(--green);" id="stream-status-badge">● LSE WSS Live</span>
+                    <span style="color: var(--green);" id="stream-status-badge">● LSE WSS (unauthenticated)</span>
                 </div>
 
                 <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 15px;">
@@ -268,31 +268,11 @@
                         </div>
                         
                     </div>
-                    <!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <title>ARES-XAU Dashboard</title>
-    <style>
-        body { background: #0f172a; color: #f8fafc; font-family: monospace; padding: 20px; }
-        .card { background: #1e293b; padding: 20px; border-radius: 8px; margin-bottom: 15px; border: 1px solid #334155; }
-        h3 { color: #38bdf8; margin-top: 0; }
-    </style>
-</head>
-<body>
-</html> 
-    <!-- Yahan aap apna purana header ya navigation rakh sakte hain -->
-    <h1>ARES-XAU Quant Terminal</h1>
-
-    <!-- Jev Live Judgment View ko yahan paste karein -->
+                    <!-- Jev Live Judgment View placeholder (telemetry panel) -->
     <div class="card" id="jev-terminal-view">
         <h3>Ω Jev Live Judgment View</h3>
         <div id="jev-status">Connecting to jev-loop telemetry...</div>
     </div>
-
-    <!-- Aapka baki purana HTML content yahan aayega -->
-
-</body> 
                 </div>
             </div>
         </div>
@@ -350,7 +330,7 @@
                             </tr>
                             <tr>
                                 <td><b>US 10Y Real Yield</b></td>
-                                <td id="mat-yield">4.28%</td>
+                                <td id="mat-yield">—</td>
                                 <td style="color: var(--red); font-weight: 700;">-0.74 (Inverse)</td>
                                 <td>Capital holding cost drag.</td>
                             </tr>
@@ -380,8 +360,7 @@
                     <div style="background: var(--bg); padding: 15px; border-radius: 8px; border: 1px solid var(--border);">
                         <div style="font-size: 11px; font-family: var(--mono); color: var(--green); margin-bottom: 8px; font-weight: 700;">🐋 SMART MONEY OPTIONS BLOCK FLOW (> $250k)</div>
                         <div style="font-family: var(--mono); font-size: 11px; color: var(--text); height: 120px; overflow-y: auto; line-height: 1.5;" id="block-flow-log">
-                            • <b>PUT BLOCK:</b> $4250 Strike | Premium: $420,000 | Sweep (Bearish Hedge)<br>
-                            • <b>CALL BLOCK:</b> $4400 Strike | Premium: $850,000 | Split (Bullish Absorption)
+                            • No live block-flow feed is connected — no blocks to show.
                         </div>
                     </div>
                 </div>
@@ -492,19 +471,11 @@
                     }
                 }
 
-                const macroRes = await fetch('lse_macro.csv?' + new Date().getTime());
-                if (macroRes.ok) {
-                    const csv = await macroRes.text();
-                    const lines = csv.trim().split("\n");
-                    if (lines.length >= 2) {
-                        const cols = lines[1].split(",");
-                        const yVal = parseFloat(cols[1]);
-                        if (!isNaN(yVal) && yVal > 0) {
-                            document.getElementById('t-yield').innerText = `${yVal.toFixed(2)}%`;
-                            document.getElementById('mat-yield').innerText = `${yVal.toFixed(2)}%`;
-                        }
-                    }
-                }
+                // lse_macro.csv was removed: no process in this repo
+                // generates it, so the yield field never updated from it.
+                // Yield is shown as unavailable until a real feed is wired in.
+                document.getElementById('t-yield').innerText = '—';
+                document.getElementById('mat-yield').innerText = '—';
 
                 const nowTime = new Date().toLocaleTimeString();
                 document.getElementById('last-sync-time').innerText = nowTime;
@@ -540,7 +511,7 @@
             ws.onopen = () => {
                 const logBox = document.getElementById('ws-raw-log');
                 if(logBox) {
-                    logBox.innerHTML = `[LSE WSS LIVE CONNECTED & AUTHENTICATED]<br>` + logBox.innerHTML;
+                    logBox.innerHTML = `[LSE WSS CONNECTED — unauthenticated public feed, no subscription sent]<br>` + logBox.innerHTML;
                 }
             };
 
