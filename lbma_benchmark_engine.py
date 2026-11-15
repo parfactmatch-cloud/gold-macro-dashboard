@@ -8,10 +8,13 @@ Institutional LBMA Benchmark Auction & Settlement Timing Engine (IST Native):
 - Acts as an Execution Gatekeeper for jev_paper_engine.py
 """
 
+import json
+import logging
+import os
 from datetime import datetime, timezone
 from zoneinfo import ZoneInfo
-import json
-import os
+
+logger = logging.getLogger(__name__)
 
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 LBMA_STATE_FILE = os.path.join(SCRIPT_DIR, "lbma_status.json")
@@ -31,16 +34,23 @@ def get_current_times():
 
 def inspect_lbma_auction_window() -> dict:
     """
-    Evaluates current IST time against LBMA Gold Price auction windows.
-    IST Corresponding Timings (during British Summer Time / London Daylight):
+    Evaluates current time against LBMA Gold Price auction windows.
+
+    The code works in London time (Europe/London, so BST/GMT transitions
+    are handled by zoneinfo). Windows in London time:
       - AM Fix:
-          * Pre-Fix Ramp:  3:05 PM - 3:29 PM IST
-          * Live Auction:  3:30 PM - 3:34 PM IST
-          * Post-Fix Snap: 3:35 PM - 3:55 PM IST
+          * Pre-Fix Ramp:  10:05 - 10:29 London
+          * Live Auction:  10:30 - 10:34 London
+          * Post-Fix Snap: 10:35 - 10:55 London
       - PM Fix:
-          * Pre-Fix Ramp:  7:35 PM - 7:59 PM IST
-          * Live Auction:  8:00 PM - 8:04 PM IST
-          * Post-Fix Snap: 8:05 PM - 8:25 PM IST
+          * Pre-Fix Ramp:  14:35 - 14:59 London
+          * Live Auction:  15:00 - 15:04 London
+          * Post-Fix Snap: 15:05 - 15:25 London
+    IST equivalents shift with the London clock: during BST (London
+    UTC+1) the AM fix is 15:00 IST and the PM fix 19:30 IST; during GMT
+    (London UTC+0) they are 16:00 IST and 20:30 IST. The old docstring
+    quoted IST times that were ~30 minutes off and ignored the
+    BST/GMT shift — do not rely on it.
     """
     ist_dt, ldn_dt = get_current_times()
     weekday = ist_dt.weekday()  # 0=Monday, 4=Friday, 5=Saturday, 6=Sunday
@@ -67,8 +77,8 @@ def inspect_lbma_auction_window() -> dict:
     notes = "Standard auction flow. No active benchmark auction distortions."
 
     # 1. Pre-Fix Ramp / Inventory Shading Window
-    # AM Fix Window (Around 3:05 PM - 3:29 PM IST)
-    # PM Fix Window (Around 7:35 PM - 7:59 PM IST)
+    # AM Fix pre-ramp: 10:05-10:29 London (14:35-14:59 IST in BST)
+    # PM Fix pre-ramp: 14:35-14:59 London (19:05-19:29 IST in BST)
     if (605 <= ldn_mins < 630) or (875 <= ldn_mins < 900):
         fix_name = "AM_FIX" if ldn_mins < 630 else "PM_FIX"
         phase = f"PRE_{fix_name}_RAMP_SHADING"
@@ -78,8 +88,8 @@ def inspect_lbma_auction_window() -> dict:
         notes = f"Pre-{fix_name} inventory shading active in London. Counter-trend fades blocked."
 
     # 2. Live Electronic IBA Auction Balancing Rounds (Peak Volatility & Spread Expansion)
-    # AM Fix Peak (Around 3:30 PM - 3:34 PM IST)
-    # PM Fix Peak (Around 8:00 PM - 8:04 PM IST)
+    # AM Fix auction: 10:30-10:34 London (15:00-15:04 IST in BST)
+    # PM Fix auction: 15:00-15:04 London (19:30-19:34 IST in BST)
     elif (630 <= ldn_mins <= 634) or (900 <= ldn_mins <= 904):
         fix_name = "AM_FIX" if ldn_mins <= 634 else "PM_FIX"
         phase = f"LIVE_{fix_name}_AUCTION_MATCHING"
@@ -89,8 +99,8 @@ def inspect_lbma_auction_window() -> dict:
         notes = f"Live IBA matching round running for {fix_name}. Execution strictly paused."
 
     # 3. Post-Fix Elastic Snap-Back (Artificial Imbalance Unwinding / Liquidity Vacuum)
-    # AM Fix Post-Snap (Around 3:35 PM - 3:55 PM IST)
-    # PM Fix Post-Snap (Around 8:05 PM - 8:25 PM IST)
+    # AM Fix post-snap: 10:35-10:55 London (15:05-15:25 IST in BST)
+    # PM Fix post-snap: 15:05-15:25 London (19:35-19:55 IST in BST)
     elif (635 <= ldn_mins <= 655) or (905 <= ldn_mins <= 925):
         fix_name = "AM_FIX" if ldn_mins <= 655 else "PM_FIX"
         phase = f"POST_{fix_name}_ELASTIC_SNAPBACK"
@@ -119,14 +129,12 @@ def inspect_lbma_auction_window() -> dict:
 
 
 if __name__ == "__main__":
+    logging.basicConfig(level=logging.INFO, format="%(levelname)s %(name)s: %(message)s")
     status = inspect_lbma_auction_window()
-    print("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
-    print("🏛️ LBMA BENCHMARK AUCTION RADAR (IST)")
-    print("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
-    print(f"⏰ Current IST Time  : {status['ist_time']}")
-    print(f"📍 Market Phase      : {status['phase']}")
-    print(f"🛡️ Execution Policy  : {status['execution_policy']}")
-    print(f"⚖️ Risk Multiplier   : {status['risk_weight']}x")
-    print(f"🎯 Target Expander   : {status['rr_multiplier']}x")
-    print(f"📝 Telemetry Notes   : {status['notes']}")
-    print("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+    logger.info("LBMA BENCHMARK AUCTION RADAR (IST)")
+    logger.info("Current IST Time  : %s", status['ist_time'])
+    logger.info("Market Phase      : %s", status['phase'])
+    logger.info("Execution Policy  : %s", status['execution_policy'])
+    logger.info("Risk Multiplier   : %sx", status['risk_weight'])
+    logger.info("Target Expander   : %sx", status['rr_multiplier'])
+    logger.info("Telemetry Notes   : %s", status['notes'])
