@@ -9,6 +9,7 @@ Hardened Structural Strike Allocation:
 
 import os
 import json
+import logging
 import math
 from datetime import datetime, timezone
 import numpy as np
@@ -16,6 +17,8 @@ import pandas as pd
 import requests
 import yfinance as yf
 from scipy.stats import norm
+
+logger = logging.getLogger(__name__)
 
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 OUTPUT_FILE = os.path.join(SCRIPT_DIR, "gex_levels.json")
@@ -151,7 +154,8 @@ def compute_volume_profile(spot: float) -> dict:
 # 3. ROBUST BLACK-SCHOLES OPTIONS GEX ENGINE
 # =====================================================================
 def norm_pdf(x):
-    return norm._pdf(x)
+    # Public scipy API — the old code used the private norm._pdf.
+    return norm.pdf(x)
 
 
 def compute_options_gex(spot_xau: float) -> dict:
@@ -285,10 +289,13 @@ def compute_options_gex(spot_xau: float) -> dict:
             "gamma_flip_xau": gamma_flip_xau,
             "net_dex_m": total_dex,
             "net_gamma_regime": regime,
-            "gamma_blast_active": blast
+            "gamma_blast_active": blast,
+            "synthetic": False,
         }
 
     except Exception:
+        # SYNTHETIC fallback: clearly flagged so no downstream consumer
+        # can mistake these invented levels for live dealer gamma.
         return {
             "gld_close": round(spot_xau / 10.94, 2),
             "conv_ratio": 10.94,
@@ -297,7 +304,8 @@ def compute_options_gex(spot_xau: float) -> dict:
             "gamma_flip_xau": round(spot_xau - 12.0, 2),
             "net_dex_m": -2.5,
             "net_gamma_regime": "LONG_GAMMA_MEAN_REVERT",
-            "gamma_blast_active": False
+            "gamma_blast_active": False,
+            "synthetic": True,
         }
 
 
@@ -317,9 +325,10 @@ def json_serial_fallback(obj):
 
 
 def main():
-    print("[GEX ENGINE] Ingesting Spot XAU/USD...")
+    logging.basicConfig(level=logging.INFO, format="%(levelname)s %(name)s: %(message)s")
+    logger.info("[GEX ENGINE] Ingesting Spot XAU/USD...")
     spot_xau, data_source = fetch_spot_gold()
-    print(f"[GEX ENGINE] Live Spot: ${spot_xau:.2f} via {data_source}")
+    logger.info("[GEX ENGINE] Live Spot: $%.2f via %s", spot_xau, data_source)
 
     gex_data = compute_options_gex(spot_xau)
     vp_data = compute_volume_profile(spot_xau)
@@ -329,9 +338,21 @@ def main():
 
     now_utc = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC")
 
+    # Honest status: never HEALTHY / valid when any input is synthetic.
+    # Consumers (dashboard, Jev engine, Telegram) must be able to tell
+    # real levels from invented ones.
+    synthetic = bool(
+        gex_data.get("synthetic")
+        or data_source == "STATIC_SYNTHETIC_FALLBACK"
+        or vp_data.get("profile_status") == "SYNTHETIC_ESTIMATE"
+    )
+    status = "DEGRADED_SYNTHETIC" if synthetic else "HEALTHY"
+    lse_online = bool(LSE_API_KEY) and data_source == "LSE_INSTITUTIONAL"
+
     payload = {
         "timestamp_utc": now_utc,
-        "status": "HEALTHY",
+        "status": status,
+        "synthetic": synthetic,
         "data_source": data_source,
         "spot_xau": spot_xau,
         "gld_close": gex_data["gld_close"],
@@ -344,7 +365,7 @@ def main():
         "gamma_blast_active": bool(gex_data["gamma_blast_active"]),
         "call_distance_telemetry": f"Call: +${call_dist:.2f}",
         "put_distance_telemetry": f"Put: -${put_dist:.2f}",
-        "is_corridor_valid": True,
+        "is_corridor_valid": not synthetic,
         "order_flow": {
             "session_poc": vp_data["poc"],
             "session_vah": vp_data["vah"],
@@ -355,8 +376,12 @@ def main():
             )
         },
         "lse_telemetry": {
-            "lse_status": "ONLINE",
-            "institutional_core": "LSE_QUANT_SYNCHRONIZED",
+            # Only claim ONLINE when an LSE key exists and LSE actually
+            # supplied the spot. Otherwise say so plainly.
+            "lse_status": "ONLINE" if lse_online else "UNAVAILABLE",
+            "institutional_core": (
+                "LSE_QUANT_SYNCHRONIZED" if lse_online else "LSE_NOT_CONFIGURED"
+            ),
             "order_flow_bias": "ACCUMULATION" if gex_data["net_dex_m"] > 0 else "DISTRIBUTION"
         }
     }
@@ -364,7 +389,10 @@ def main():
     with open(OUTPUT_FILE, "w") as f:
         json.dump(payload, f, indent=2, default=json_serial_fallback)
 
-    print(f"[GEX ENGINE SUCCESS] Telemetry generated: Call Wall ${gex_data['call_wall_xau']} | Put Wall ${gex_data['put_wall_xau']} | Flip ${gex_data['gamma_flip_xau']}")
+    logger.info(
+        "[GEX ENGINE %s] Telemetry generated: Call Wall $%s | Put Wall $%s | Flip $%s",
+        status, gex_data['call_wall_xau'], gex_data['put_wall_xau'], gex_data['gamma_flip_xau']
+    )
 
 
 if __name__ == "__main__":
