@@ -263,7 +263,9 @@ def fetch_lse_gld_chain(api_key: str) -> list | None:
         return None
     rows: list = []
     offset = 0
-    limit = 10000
+    # Limit 10000 is rejected with HTTP 400; 2500 works (verified live
+    # 16 Nov 2026), so paginate in 2500-row pages.
+    limit = 2500
     while True:
         res = requests.get(
             f"{LSE_API_BASE}/options/chain",
@@ -276,12 +278,11 @@ def fetch_lse_gld_chain(api_key: str) -> list | None:
             return None
         payload = res.json()
         batch = payload if isinstance(payload, list) else (
-            payload.get("data") or payload.get("rows") or payload.get("contracts") or []
+            payload.get("rows") or payload.get("data") or []
         )
         if not batch:
             break
         rows.extend(batch)
-        total = payload.get("contracts") if isinstance(payload, dict) else None
         if len(batch) < limit:
             break
         offset += len(batch)

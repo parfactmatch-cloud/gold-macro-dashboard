@@ -510,3 +510,28 @@ def test_lse_chain_parser_handles_list_payload(monkeypatch):
     monkeypatch.setattr(gex.requests, "get", lambda *a, **k: FakeResp())
     rows = gex.fetch_lse_gld_chain("test-key")
     assert rows and rows[0]["strike"] == 355.0
+
+
+def test_lse_chain_paginates_in_2500_row_pages(monkeypatch):
+    """Live finding 16 Nov 2026: limit=10000 is HTTP 400, 2500 works."""
+    calls = []
+
+    class FakeResp:
+        def __init__(self, rows):
+            self.status_code = 200
+            self._rows = rows
+
+        def json(self):
+            return {"contracts": 3, "rows": self._rows}
+
+    def fake_get(url, params=None, headers=None, timeout=None):
+        calls.append(params["limit"])
+        offset = params["offset"]
+        if offset == 0:
+            return FakeResp([{"strike": 350.0}] * 2500)
+        return FakeResp([{"strike": 351.0}])
+
+    monkeypatch.setattr(gex.requests, "get", fake_get)
+    rows = gex.fetch_lse_gld_chain("test-key")
+    assert calls == [2500, 2500]
+    assert len(rows) == 2501
