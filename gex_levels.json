@@ -1,14 +1,14 @@
 {
-  "timestamp_utc": "2026-11-16 08:12:10 UTC",
+  "timestamp_utc": "2026-11-16 11:37:54 UTC",
   "status": "DEGRADED_SYNTHETIC",
   "synthetic": true,
   "data_source": "TWELVE_DATA",
-  "spot_xau": 3856.54,
-  "gld_close": 352.52,
+  "spot_xau": 3873.87,
+  "gld_close": 354.1,
   "conv_ratio": 10.94,
-  "call_wall_xau": 3891.54,
-  "put_wall_xau": 3821.54,
-  "gamma_flip_xau": 3844.54,
+  "call_wall_xau": 3908.87,
+  "put_wall_xau": 3838.87,
+  "gamma_flip_xau": 3861.87,
   "net_dex_m": -2.5,
   "net_gamma_regime": "LONG_GAMMA_MEAN_REVERT",
   "gamma_blast_active": false,
@@ -17,10 +17,10 @@
   "is_corridor_valid": false,
   "order_flow": {
     "session_poc": 3854.5,
-    "session_vah": 3863.0,
+    "session_vah": 3868.0,
     "session_val": 3846.5,
     "profile_status": "CALCULATED",
-    "absorption_bias": "VALUE_ACCEPTED"
+    "absorption_bias": "BEARISH_EXHAUSTION"
   },
   "lse_telemetry": {
     "lse_status": "UNAVAILABLE",
