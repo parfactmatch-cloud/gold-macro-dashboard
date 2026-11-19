@@ -1,6 +1,24 @@
 {
   "balance": 10080.305300000004,
-  "active_trade": null,
+  "active_trade": {
+    "trade_id": "JEV-1795055185",
+    "side": "BUY",
+    "entry_price": 3747.99,
+    "units": 9.03,
+    "initial_risk": 11.159999999999854,
+    "atr_buffer": 7.44,
+    "order_flow_flow": "INSTITUTIONAL_BID_ABSORPTION (IR 1.61) | CVD: BULLISH_ABSORPTION_DIV",
+    "sl": 3736.83,
+    "tp": 3774.03,
+    "rr": 2.33,
+    "reason": "ORDERFLOW_GAMMA_BLAST_EXPANSION_CVD_ABSORBED",
+    "kronos_score": "BULLISH_EXPANSION (0.61)",
+    "lbma_phase": "CONTINUOUS_TRADING",
+    "be_locked": false,
+    "partial_taken": false,
+    "opened_at": "02:26 UTC",
+    "partial_pnl": 0.0
+  },
   "closed_trades": [
     {
       "trade_id": "JEV-1791763283",
@@ -189,5 +207,10 @@
       "exit_reason": "STOP_LOSS_HIT"
     }
   ],
-  "last_update_id": 21400139
+  "last_update_id": 21400139,
+  "daily": {
+    "date": "2026-11-19",
+    "trades_opened": 1,
+    "daily_pnl": 0.0
+  }
 }
