@@ -1,5 +1,5 @@
 {
-  "timestamp_utc": "2026-11-20 23:52:52 UTC",
+  "timestamp_utc": "2026-11-21 06:37:24 UTC",
   "status": "HEALTHY",
   "synthetic": false,
   "data_source": "TWELVE_DATA",
@@ -9,7 +9,7 @@
   "call_wall_xau": 3895.33,
   "put_wall_xau": 3446.71,
   "gamma_flip_xau": 3532.82,
-  "net_dex_m": -3.1,
+  "net_dex_m": -3.2,
   "net_gamma_regime": "LONG_GAMMA_MEAN_REVERT",
   "gamma_blast_active": false,
   "call_distance_telemetry": "Call: +$362.51",
