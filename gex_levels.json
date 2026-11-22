@@ -1,5 +1,5 @@
 {
-  "timestamp_utc": "2026-11-22 01:05:54 UTC",
+  "timestamp_utc": "2026-11-22 08:02:14 UTC",
   "status": "HEALTHY",
   "synthetic": false,
   "data_source": "TWELVE_DATA",
@@ -16,9 +16,9 @@
   "put_distance_telemetry": "Put: -$86.22",
   "is_corridor_valid": true,
   "order_flow": {
-    "session_poc": 3577.5,
-    "session_vah": 3591.0,
-    "session_val": 3567.0,
+    "session_poc": 3584.5,
+    "session_vah": 3592.5,
+    "session_val": 3576.5,
     "profile_status": "CALCULATED",
     "absorption_bias": "BULLISH_ABSORPTION"
   },
