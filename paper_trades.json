@@ -1,24 +1,6 @@
 {
-  "balance": 9979.535300000003,
-  "active_trade": {
-    "trade_id": "JEV-1795574092",
-    "side": "BUY",
-    "entry_price": 3569.52,
-    "units": 3.54,
-    "initial_risk": 42.320000000000164,
-    "atr_buffer": 9.82,
-    "order_flow_flow": "INSTITUTIONAL_BID_ABSORPTION (IR 2.57) | CVD: NONE",
-    "sl": 3527.2,
-    "tp": 3624.5,
-    "rr": 1.3,
-    "reason": "CONFLUENCE_PUT_WALL_VAL_ABSORPTION",
-    "kronos_score": "BULLISH_EXPANSION (0.70)",
-    "lbma_phase": "CONTINUOUS_TRADING",
-    "be_locked": false,
-    "partial_taken": false,
-    "opened_at": "02:34 UTC",
-    "partial_pnl": 0.0
-  },
+  "balance": 9829.725300000004,
+  "active_trade": null,
   "closed_trades": [
     {
       "trade_id": "JEV-1791763283",
@@ -227,12 +209,34 @@
       "exit_price": 3734.69,
       "pnl": -100.77,
       "exit_reason": "STOP_LOSS_HIT"
+    },
+    {
+      "trade_id": "JEV-1795574092",
+      "side": "BUY",
+      "entry_price": 3569.52,
+      "units": 3.54,
+      "initial_risk": 42.320000000000164,
+      "atr_buffer": 9.82,
+      "order_flow_flow": "INSTITUTIONAL_BID_ABSORPTION (IR 2.57) | CVD: NONE",
+      "sl": 3527.2,
+      "tp": 3624.5,
+      "rr": 1.3,
+      "reason": "CONFLUENCE_PUT_WALL_VAL_ABSORPTION",
+      "kronos_score": "BULLISH_EXPANSION (0.70)",
+      "lbma_phase": "CONTINUOUS_TRADING",
+      "be_locked": false,
+      "partial_taken": false,
+      "opened_at": "02:34 UTC",
+      "partial_pnl": 0.0,
+      "exit_price": 3510.62,
+      "pnl": -149.81,
+      "exit_reason": "STOP_LOSS_HIT"
     }
   ],
   "last_update_id": 21400139,
   "daily": {
     "date": "2026-11-25",
     "trades_opened": 1,
-    "daily_pnl": 0.0
+    "daily_pnl": -149.81
   }
 }
