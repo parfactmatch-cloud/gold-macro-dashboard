@@ -4,6 +4,6 @@
   "execution_policy": "FAVOR_REVERSION_EXPANDED_TARGETS",
   "rr_multiplier": 1.65,
   "risk_weight": 1.25,
-  "ist_time": "04:05 PM IST",
+  "ist_time": "04:20 PM IST",
   "notes": "AM_FIX auction completed. Imbalances snapping back toward session fair value."
 }
