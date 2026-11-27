@@ -8,9 +8,24 @@ on:
 permissions:
   contents: write
 
+# Serialize sync runs: two overlapping runs both compute from the same
+# HEAD and both try to push to main. The loser either fails its push or
+# (with the old stash/pop dance) silently loses its state. Queuing
+# instead of overlapping is the correct behaviour for a 15-minute
+# state-commit loop. Do NOT use cancel-in-progress: true here — that
+# would drop runs and re-introduce gaps.
+concurrency:
+  group: sync-data
+  cancel-in-progress: false
+
 jobs:
   sync-data:
     runs-on: ubuntu-latest
+    # A healthy run takes a few minutes now that torch is gone. If a run
+    # hangs (e.g. a Yahoo call with no timeout), fail it loudly after
+    # 30 minutes instead of occupying the concurrency slot for GitHub's
+    # 6-hour default — a hung run would otherwise block every later run.
+    timeout-minutes: 30
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v4
@@ -21,12 +36,15 @@ jobs:
           python-version: '3.10'
 
       - name: Install Dependencies
+        # Install from the pinned requirements file only. The old step
+        # installed a different, unpinned set (and torch/transformers/
+        # einops that nothing imports) so the workflow environment did
+        # not match a local `pip install -r requirements.txt`. Kronos is
+        # a 10-bar momentum sigmoid, not a neural model — it needs no
+        # torch (see kronos_gatekeeper.py).
         run: |
           python -m pip install --upgrade pip
-          python -m pip install pandas numpy scipy yfinance requests
-          # Install lightweight CPU-only PyTorch & transformers dependencies for Kronos
-          python -m pip install torch torchvision --index-url https://download.pytorch.org/whl/cpu
-          python -m pip install einops huggingface_hub
+          python -m pip install -r requirements.txt
 
       - name: Run High-Impact Macro News Gatekeeper
         env:
@@ -43,7 +61,9 @@ jobs:
         run: |
           python free_gex_engine.py
 
-      - name: Run Kronos K-Line Neural Inference
+      - name: Run Kronos Momentum Regime Check
+        # Kronos is a 10-bar momentum sigmoid, not a neural model —
+        # it needs no torch/transformers (see kronos_gatekeeper.py).
         run: |
           python kronos_gatekeeper.py
 
@@ -64,15 +84,37 @@ jobs:
           python telegram_engine.py
 
       - name: Pull Latest Changes
+        # The old step did `git stash; git pull --rebase; git stash pop`,
+        # which can conflict with or discard the state files this run
+        # just wrote. Stage the generated state first and let rebase
+        # auto-stash it; abort cleanly instead of popping over conflicts.
         run: |
           git config --global user.name "github-actions[bot]"
           git config --global user.email "github-actions[bot]@users.noreply.github.com"
-          git stash || true
-          git pull origin main --rebase || true
-          git stash pop || true
+          git add gex_levels.json paper_trades.json kronos_signal.json kronos_state.json lbma_status.json news_status.json bot_control.json telegram_offset.json 2>/dev/null || true
+          git -c rebase.autoStash=true pull --rebase origin main || git rebase --abort
 
       - name: Commit and Push Clean Telemetry
         uses: stefanzweifel/git-auto-commit-action@v4
         with:
-          commit_message: "auto: sync live GEX, Kronos AI, News Gatekeeper & Jev ledger"
+          commit_message: "auto: sync live GEX, Kronos momentum, News Gatekeeper & Jev ledger"
           branch: main
+          # Only the state JSONs are telemetry. Without this the action
+          # also commits whatever else changed in the checkout — the
+          # live history shows __pycache__/*.pyc files committed in
+          # every sync commit.
+          file_pattern: 'gex_levels.json paper_trades.json kronos_signal.json kronos_state.json lbma_status.json news_status.json bot_control.json telegram_offset.json'
+
+      - name: Verify the sync landed
+        # Fail loudly if this run produced no new commit: a silent
+        # no-commit is how this pipeline went hours stale without
+        # anyone noticing. A healthy run always changes gex_levels.json
+        # (free_gex_engine.py writes a fresh timestamp_utc every run),
+        # so "nothing to commit" after the scripts ran means the
+        # commit/push step silently did nothing.
+        run: |
+          git fetch origin main
+          HEAD_SHA=$(git rev-parse origin/main)
+          echo "main is now at $HEAD_SHA"
+          git log -1 --format='last sync commit: %h %ci %s' origin/main
+          git status --short
