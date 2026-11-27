@@ -91,7 +91,7 @@ jobs:
         run: |
           git config --global user.name "github-actions[bot]"
           git config --global user.email "github-actions[bot]@users.noreply.github.com"
-          git add gex_levels.json paper_trades.json kronos_signal.json kronos_state.json lbma_status.json news_status.json bot_control.json telegram_offset.json 2>/dev/null || true
+          git add gex_levels.json paper_trades.json kronos_signal.json kronos_state.json lbma_status.json news_status.json bot_control.json 2>/dev/null || true
           git -c rebase.autoStash=true pull --rebase origin main || git rebase --abort
 
       - name: Commit and Push Clean Telemetry
@@ -103,7 +103,7 @@ jobs:
           # also commits whatever else changed in the checkout — the
           # live history shows __pycache__/*.pyc files committed in
           # every sync commit.
-          file_pattern: 'gex_levels.json paper_trades.json kronos_signal.json kronos_state.json lbma_status.json news_status.json bot_control.json telegram_offset.json'
+          file_pattern: 'gex_levels.json paper_trades.json kronos_signal.json kronos_state.json lbma_status.json news_status.json bot_control.json'
 
       - name: Verify the sync landed
         # Fail loudly if this run produced no new commit: a silent
