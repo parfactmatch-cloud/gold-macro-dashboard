@@ -402,3 +402,136 @@ def test_paper_mode_defaults_and_no_live_execution():
             text = open(os.path.join(repo, name)).read()
             assert "place_order" not in text
             assert "create_order" not in text
+
+
+# ---------------------------------------------------------------- (l) LSE hybrid GEX
+def _fake_gld_ticker(monkeypatch, expiry="2026-12-18"):
+    """GLD ticker with a 355 close and one expiry, OI 1000 on each side."""
+    import numpy as _np
+
+    class FakeChain:
+        def __init__(self, strikes):
+            self.calls = pd.DataFrame(
+                {"strike": strikes, "openInterest": [1000] * len(strikes),
+                 "impliedVolatility": [0.20] * len(strikes)}
+            )
+            self.puts = pd.DataFrame(
+                {"strike": strikes, "openInterest": [1000] * len(strikes),
+                 "impliedVolatility": [0.20] * len(strikes)}
+            )
+
+    class FakeTicker:
+        def __init__(self, *a, **k):
+            pass
+
+        def history(self, *a, **k):
+            return pd.DataFrame({"Close": [355.0, 355.0]})
+
+        @property
+        def options(self):
+            return [expiry]
+
+        def option_chain(self, exp):
+            return FakeChain([350.0, 355.0, 360.0])
+
+    monkeypatch.setattr(gex.yf, "Ticker", FakeTicker)
+    return expiry
+
+
+def test_hybrid_gex_uses_lse_gamma_and_yfinance_oi(monkeypatch):
+    expiry = _fake_gld_ticker(monkeypatch)
+    monkeypatch.setattr(gex, "LSE_API_KEY", "test-key")
+    monkeypatch.setattr(gex, "GEX_SOURCE", "hybrid")
+
+    class FakeResp:
+        status_code = 200
+
+        def json(self):
+            return {
+                "contracts": 6,
+                "data": [
+                    {"expiry": expiry, "strike": 350.0, "contract_type": "call",
+                     "gamma": 0.02, "delta": 0.6, "iv": 0.20, "dte": 32},
+                    {"expiry": expiry, "strike": 355.0, "contract_type": "call",
+                     "gamma": 0.03, "delta": 0.5, "iv": 0.20, "dte": 32},
+                    {"expiry": expiry, "strike": 360.0, "contract_type": "call",
+                     "gamma": 0.01, "delta": 0.4, "iv": 0.20, "dte": 32},
+                    {"expiry": expiry, "strike": 350.0, "contract_type": "put",
+                     "gamma": 0.02, "delta": -0.4, "iv": 0.20, "dte": 32},
+                    {"expiry": expiry, "strike": 355.0, "contract_type": "put",
+                     "gamma": 0.03, "delta": -0.5, "iv": 0.20, "dte": 32},
+                    {"expiry": expiry, "strike": 360.0, "contract_type": "put",
+                     "gamma": 0.01, "delta": -0.6, "iv": 0.20, "dte": 32},
+                ],
+            }
+
+    monkeypatch.setattr(gex.requests, "get", lambda *a, **k: FakeResp())
+    out = gex.compute_options_gex(3880.0)
+    assert out["synthetic"] is False
+    assert out["gex_source"] == "LSE_HYBRID"
+    assert out["gex_gamma_source"] == "LSE"
+    assert out["gex_oi_source"] == "YFINANCE"
+    assert out["lse_contracts_used"] == 6
+    assert out["lse_gamma_contracts"] == 6
+    assert out["call_wall_xau"] > out["put_wall_xau"]
+
+
+def test_hybrid_gex_falls_back_to_yfinance_when_lse_fails(monkeypatch):
+    _fake_gld_ticker(monkeypatch)
+    monkeypatch.setattr(gex, "LSE_API_KEY", "test-key")
+    monkeypatch.setattr(gex, "GEX_SOURCE", "hybrid")
+    monkeypatch.setattr(
+        gex.requests, "get",
+        lambda *a, **k: (_ for _ in ()).throw(RuntimeError("LSE down")),
+    )
+    out = gex.compute_options_gex(3880.0)
+    assert out["synthetic"] is False
+    assert out["gex_source"] == "YFINANCE_BSM"
+    assert out["lse_contracts_used"] == 0
+
+
+def test_hybrid_gex_skipped_without_key(monkeypatch):
+    _fake_gld_ticker(monkeypatch)
+    monkeypatch.setattr(gex, "LSE_API_KEY", "")
+    monkeypatch.setattr(gex, "GEX_SOURCE", "hybrid")
+    out = gex.compute_options_gex(3880.0)
+    assert out["gex_source"] == "YFINANCE_BSM"
+
+
+def test_lse_chain_parser_handles_list_payload(monkeypatch):
+    monkeypatch.setattr(gex, "LSE_API_KEY", "test-key")
+
+    class FakeResp:
+        status_code = 200
+
+        def json(self):
+            return [{"expiry": "2026-12-18", "strike": 355.0}]
+
+    monkeypatch.setattr(gex.requests, "get", lambda *a, **k: FakeResp())
+    rows = gex.fetch_lse_gld_chain("test-key")
+    assert rows and rows[0]["strike"] == 355.0
+
+
+def test_lse_chain_paginates_in_2500_row_pages(monkeypatch):
+    """Live finding 16 Nov 2026: limit=10000 is HTTP 400, 2500 works."""
+    calls = []
+
+    class FakeResp:
+        def __init__(self, rows):
+            self.status_code = 200
+            self._rows = rows
+
+        def json(self):
+            return {"contracts": 3, "rows": self._rows}
+
+    def fake_get(url, params=None, headers=None, timeout=None):
+        calls.append(params["limit"])
+        offset = params["offset"]
+        if offset == 0:
+            return FakeResp([{"strike": 350.0}] * 2500)
+        return FakeResp([{"strike": 351.0}])
+
+    monkeypatch.setattr(gex.requests, "get", fake_get)
+    rows = gex.fetch_lse_gld_chain("test-key")
+    assert calls == [2500, 2500]
+    assert len(rows) == 2501

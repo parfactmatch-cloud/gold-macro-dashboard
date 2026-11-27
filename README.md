@@ -34,6 +34,14 @@ this repository — the Jev engine paper-trades spot gold with virtual money.
   volume profile is a $1-bin approximation. When a feed fails, the engine
   writes **synthetic** levels labelled `status: "DEGRADED_SYNTHETIC"` and
   `synthetic: true` — the Jev engine will not open new trades off them.
+- Hybrid GEX (default, `GEX_SOURCE=hybrid`): gamma comes from the free
+  London Strategic Edge GLD options chain, open interest from yfinance —
+  LSE's chain has no open-interest field, so GEX cannot be built from LSE
+  alone (verified 16 Nov 2026). If the LSE call fails, the engine falls
+  back to pure yfinance BSM gamma and logs the failure. COMEX OG options
+  are not used: LSE lists them, but prices need a paid CME Group Lite plan.
+  Live LSE spot comes from the LSE WebSocket, not its HTTP candles, which
+  are end-of-day stored data.
 - "LSE institutional" telemetry is only as real as your `LSE_API_KEY`.
   With no key it reports `UNAVAILABLE`, not ONLINE.
 - The HTML terminal's WebSocket (`index.html`) is an unauthenticated
@@ -79,7 +87,8 @@ variables → Actions → Repository secrets**) or in a local `.env` file
 | Secret Name | Purpose |
 |---|---|
 | TWELVE_DATA_API_KEY | Twelve Data real-time gold spot (XAU/USD) |
-| LSE_API_KEY | London Strategic Edge quote (optional; without it LSE shows UNAVAILABLE) |
+| LSE_API_KEY | London Strategic Edge — live XAU/USD via WebSocket and GLD gamma for hybrid GEX (optional; without it GEX falls back to yfinance BSM and LSE shows UNAVAILABLE) |
+| GEX_SOURCE | `hybrid` (default: LSE gamma + yfinance OI) or `yfinance` (BSM gamma, no LSE call) |
 | FRED_API_KEY | FRED US 10-Year Treasury Yield (DGS10) — **rotate the old hardcoded key** |
 | TELEGRAM_BOT_TOKEN | Telegram BotFather token |
 | TELEGRAM_CHAT_ID | The one chat allowed to send commands to the bot |
