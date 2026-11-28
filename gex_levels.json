@@ -1,5 +1,5 @@
 {
-  "timestamp_utc": "2026-11-28 01:51:11 UTC",
+  "timestamp_utc": "2026-11-28 02:05:46 UTC",
   "status": "DEGRADED_SYNTHETIC",
   "synthetic": true,
   "data_source": "TWELVE_DATA",
@@ -16,10 +16,10 @@
   "put_distance_telemetry": "Put: -$35.00",
   "is_corridor_valid": false,
   "order_flow": {
-    "session_poc": 3654.49,
-    "session_vah": 3669.49,
-    "session_val": 3639.49,
-    "profile_status": "SYNTHETIC_ESTIMATE",
+    "session_poc": 3657.5,
+    "session_vah": 3667.0,
+    "session_val": 3649.5,
+    "profile_status": "CALCULATED",
     "absorption_bias": "VALUE_ACCEPTED"
   },
   "lse_telemetry": {
