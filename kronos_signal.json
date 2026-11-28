@@ -1,7 +1,9 @@
 {
-  "kronos_status": "DATA_UNAVAILABLE",
+  "timestamp_utc": "2026-11-28 11:50:32 UTC",
+  "kronos_status": "ACTIVE_EVALUATION",
   "model": "momentum_sigmoid_10bar",
-  "predicted_regime": "NEUTRAL",
-  "bullish_probability": 0.5,
+  "predicted_regime": "BULLISH_EXPANSION",
+  "bullish_probability": 0.64,
+  "bearish_probability": 0.36,
   "gatekeeper_approved": true
 }
